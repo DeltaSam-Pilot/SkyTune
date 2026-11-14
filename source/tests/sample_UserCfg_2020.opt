@@ -1,0 +1,28 @@
+Version 61
+{Graphics
+	Version 1.1.0
+	Preset High
+	{Texture
+		MaxAnisotropy 8
+		Quality 1
+	}
+	{Terrain
+		LoDFactor 1.000000
+	}
+	{ObjectsLoD
+		LoDFactor 1.000000
+	}
+	{SSRaytracedShadows
+		Enabled 1
+	}
+	{VegetationLarge
+		Quality 2
+	}
+	{Traffic
+		AircraftTrafficQuantity 2
+	}
+}
+{Video
+	AntiAliasing DLSS
+	DLSSG 0
+}

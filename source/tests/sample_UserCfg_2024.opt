@@ -1,0 +1,189 @@
+Version 66
+{Video
+	Adapter "NVIDIA GeForce RTX 2080 Ti"
+	Monitor 0
+	Windowed 1
+	FullscreenBorderless 1
+	WindowActive 0
+	Resolution 2560 1440
+	FullScreenResolution 2560 1440
+	PosX 0
+	PosY 0
+	AntiAliasing DLSS
+	DLSSMode QUALITY
+	Reflex ON
+	FSRMode BALANCED
+	FrameGeneration NONE
+	NBFramesToGenerate 1
+	PrimaryScaling 1.000000
+	SecondaryScaling 1.000000
+	SharpenAmount 1.000000
+	ExposureBias 0.000000
+	DynamicSettings 1
+	TargetFrameRate 30
+	ReprojectionMode 0
+	EnvironmentBlendMode 0
+	FoveatedRendering 0
+	FoveatedRenderingScale 0.500000
+	WorldScalePercentVR 100
+	AntiAliasingVR TAA
+	DLSSModeVR AUTO
+	ReflexVR ON
+	FSRModeVR BALANCED
+	FrameGenerationVR NONE
+	NBFramesToGenerateVR 1
+	PrimaryScalingVR 1.000000
+	SecondaryScalingVR 1.000000
+	SharpenAmountVR 1.000000
+	ExposureBiasVR 0.000000
+	DynamicSettingsVR 1
+	TargetFrameRateVR 30
+	VSync 0 HDR10 1
+	IntelMessageBoxDisplayed 0
+	CurrentGPUDriverVersion 0.0.0
+	DoNotShowGpuDriverRequirementPopup 0
+	FrameLimiter 0
+}
+{Graphics
+	Version 2.1.0
+	Preset Custom
+	{Texture
+		MaxAnisotropy 4
+		Quality 1
+	}
+	{Terrain
+		LoDFactor 0.750000
+		POMMaxDist 10.000000
+		POMSubsplitsMaxDist 5.000000
+	}
+	{OffscreenTerrainPreCaching
+		Enabled 1
+		Quality 2
+	}
+	{ObjectsLoD
+		LoDFactor 0.750000
+	}
+	{Shadows
+		MaxSliceCount 4
+		Size 768
+		DLightContributionCullingThresholdS0 0.100000
+		DLightContributionCullingThresholdS1 0.100000
+		DLightContributionCullingThresholdS2 0.100000
+		DLightContributionCullingThresholdS3 0.100000
+		OmniContributionCullingThreshold 0.050000
+	}
+	{HeightFieldShadows
+		Enabled 1
+		Size 512
+	}
+	{ContactShadows
+		Enabled 1
+		Quality 1
+	}
+	{Water
+		FFTSize 128
+	}
+	{VolumetricClouds
+		Enabled 1
+		Quality 1
+	}
+	{VolumetricLights
+		Enabled 1
+		Quality 1
+	}
+	{RaytracedShadows
+		Enabled 0
+	}
+	{ReflectionProbe
+		Size 192
+	}
+	{SSR
+		Enabled 1
+		HalfRes 0
+		Quality 1
+	}
+	{WindShield
+		Quality 1
+	}
+	{SSAO
+		Enabled 1
+		FullRes 0
+		Quality 1
+	}
+	{DisplacementMapping
+		Enabled 0
+	}
+	{DOF
+		Enabled 0
+		Quality 0
+	}
+	{MotionBlur
+		Enabled 0
+		Quality 0
+	}
+	{Buildings
+		Quality 1
+	}
+	{Procedural
+		TreesQuality 1
+		PlantsQuality 1
+		RocksQuality 1
+		GrassQuality 1
+	}
+	{Characters
+		Quantity 1
+		Quality 3
+		Variety 1
+	}
+	{Traffic
+		AircraftTrafficQuantity 1
+		AircraftTrafficVariety 1
+		AirportsServicesQuantity 1
+		AirportsServicesVariety 1
+		ParkedAircraftQuantity 1
+		ParkedAircraftVariety 1
+		RoadQuality 1
+		SeaQuality 1
+	}
+	{Fauna
+		Quantity 1
+	}
+	{GlassCockpitsRefreshRate
+		Quality 2
+	}
+	{Seatbelts
+		Enabled 0
+	}
+	{Particles
+		Quality 0
+	}
+}
+{GraphicsVR
+	Version 2.1.0
+	Preset VRMedium
+	{Texture
+		MaxAnisotropy 4
+		Quality 2
+	}
+	{Terrain
+		LoDFactor 0.500000
+		POMMaxDist 20.000000
+		POMSubsplitsMaxDist 7.500000
+	}
+	{OffscreenTerrainPreCaching
+		Enabled 1
+		Quality 0
+	}
+	{ObjectsLoD
+		LoDFactor 0.500000
+	}
+	{Shadows
+		MaxSliceCount 4
+		Size 1024
+	}
+	{VolumetricClouds
+		Enabled 1
+		Quality 1
+	}
+}
+InstalledPackagesPath "C:\Users\Sam\AppData\Roaming\Microsoft Flight Simulator 2024\Packages"
