@@ -88,6 +88,30 @@ class NvidiaProfile(unittest.TestCase):
         self.assertFalse(refused["ok"])
         self.assertIsNone(refused["backup"])
 
+class UpdateCatalog(unittest.TestCase):
+    def test_check_reads_versions_and_does_not_download(self):
+        pages = {
+            "https://flightsim.to/addon/117307/sky-tune": "Version 2.0.0 in the description. Downloads 10 Version 1.7.0 File Size 1 MB",
+            "https://api.github.com/repos/optiscaler/OptiScaler/releases/latest": '{"tag_name":"v0.9.5","assets":[]}',
+            "https://reshade.me": "Version 6.8.0 was released. Download ReShade 6.8.0",
+            "https://api.github.com/repos/IFreemz/msfs2024-glass-cockpit-dlss-fix/releases/latest": '{"tag_name":"v1.1.0"}',
+            "https://api.github.com/repos/tomwhoca/AtmosphereMod/releases/latest": '{"tag_name":"v0.7.3"}',
+        }
+        seen = []
+        def fetch(url):
+            seen.append(url)
+            if url not in pages:
+                raise OSError(url)
+            return pages[url]
+        lines = m.catalog_lines(fetch)
+        self.assertEqual(lines[0], "SkyTune · 1.7.0")
+        self.assertIn("OptiScaler · 0.9.5", lines)
+        self.assertIn("ReShade · 6.8.0", lines)
+        self.assertTrue(all("browser_download" not in url for url in seen))
+        def broken(_url):
+            raise OSError("offline")
+        self.assertTrue(all(line.endswith("could not be read") for line in m.catalog_lines(broken)))
+
 class LooksAndOverlay(unittest.TestCase):
     def test_presets_are_ini_files_and_overlay_does_not_invent_fps(self):
         folder = tempfile.mkdtemp()

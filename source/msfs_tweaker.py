@@ -1609,6 +1609,49 @@ def flightsim_listed_version(html):
     found = re.search(r"Downloads\s+\d+\s+Version\s+(\d+\.\d+\.\d+)", text, re.I)
     return found.group(1) if found else ""
 
+def github_release_version(payload):
+    """The tag on an official GitHub latest-release response. No files are downloaded."""
+    data = payload
+    if isinstance(payload, str):
+        try:
+            data = json.loads(payload)
+        except ValueError:
+            return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("tag_name") or "").lstrip("vV")
+
+def reshade_listed_version(html):
+    """The version named on the official ReShade page. The installer is not downloaded here."""
+    text = re.sub(r"<[^>]+>", " ", str(html or ""))
+    text = re.sub(r"\s+", " ", text)
+    found = re.search(r"Version\s+(\d+\.\d+\.\d+)", text, re.I)
+    return found.group(1) if found else ""
+
+def catalog_lines(fetch):
+    """Read official version pages. fetch(url) returns text. Nothing is downloaded or installed."""
+    lines = []
+    for item in UPDATE_CATALOG:
+        try:
+            if item["kind"] == "flightsim":
+                version = flightsim_listed_version(fetch(item["page"]))
+                if version and newer_version(version, VERSION):
+                    note = "%s · newer than this copy" % version
+                elif version:
+                    note = version
+                else:
+                    note = "version not listed"
+            elif item["kind"] == "github":
+                version = github_release_version(fetch("https://api.github.com/repos/%s/releases/latest" % item["repo"]))
+                note = version or "version not listed"
+            else:
+                version = reshade_listed_version(fetch(item["page"]))
+                note = version or "version not listed"
+        except Exception:
+            note = "could not be read"
+        lines.append("%s · %s" % (item["name"], note))
+    return lines
+
 def update_check_decision(state, enabled, today):
     """Whether a start-up check should run. At most one check on a calendar day."""
     if not enabled:
@@ -2026,11 +2069,11 @@ def overlay_text(fps, preset):
     return "%s · %s · saved in your settings" % (rate, name)
 
 UPDATE_CATALOG = (
-    {"id": "skytune", "name": "SkyTune", "page": FLIGHTSIM_PAGE},
-    {"id": "optiscaler", "name": "OptiScaler", "page": "https://github.com/optiscaler/OptiScaler/releases/latest"},
-    {"id": "reshade", "name": "ReShade", "page": RESHADE_SETUP_PAGE},
-    {"id": "glass", "name": "Glass Cockpit DLSS fix", "page": "https://github.com/IFreemz/msfs2024-glass-cockpit-dlss-fix/releases/latest"},
-    {"id": "atmosphere", "name": "AtmosphereMod", "page": "https://github.com/tomwhoca/AtmosphereMod/releases/latest"},
+    {"id": "skytune", "name": "SkyTune", "page": FLIGHTSIM_PAGE, "kind": "flightsim"},
+    {"id": "optiscaler", "name": "OptiScaler", "page": "https://github.com/optiscaler/OptiScaler/releases/latest", "kind": "github", "repo": "optiscaler/OptiScaler"},
+    {"id": "reshade", "name": "ReShade", "page": RESHADE_SETUP_PAGE, "kind": "reshade"},
+    {"id": "glass", "name": "Glass Cockpit DLSS fix", "page": "https://github.com/IFreemz/msfs2024-glass-cockpit-dlss-fix/releases/latest", "kind": "github", "repo": "IFreemz/msfs2024-glass-cockpit-dlss-fix"},
+    {"id": "atmosphere", "name": "AtmosphereMod", "page": "https://github.com/tomwhoca/AtmosphereMod/releases/latest", "kind": "github", "repo": "tomwhoca/AtmosphereMod"},
 )
 
 def read_nvidia_status(runner=None):
@@ -7138,10 +7181,14 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     updates_var = tk.StringVar(value="Not checked yet.")
     ttk.Label(updates_f, textvariable=updates_var, style="Card.TLabel", wraplength=640, justify="left").pack(anchor="w")
     def check_updates_now():
-        lines = []
-        for item in UPDATE_CATALOG:
-            lines.append("%s · %s" % (item["name"], item["page"]))
-        updates_var.set("\n".join(lines) + "\nOpened nothing. Use the button for one page.")
+        def work():
+            import urllib.request
+            def fetch(url):
+                req = urllib.request.Request(url, headers={"User-Agent": "SkyTune/%s" % VERSION, "Accept": "application/vnd.github+json, text/html"})
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    return resp.read().decode("utf-8", "replace")
+            return "\n".join(catalog_lines(fetch))
+        run_bg(work, lambda text: updates_var.set(text), "Checking the official pages…")
     ttk.Button(updates_f, text="Check official pages", style="Secondary.TButton", command=check_updates_now).pack(anchor="w", pady=(8, 0))
     for item in UPDATE_CATALOG:
         ttk.Button(updates_f, text="Open %s" % item["name"], command=lambda url=item["page"]: open_web(url)).pack(anchor="w", pady=2)
