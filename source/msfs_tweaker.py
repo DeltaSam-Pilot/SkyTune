@@ -4624,6 +4624,8 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     for name, bg in (("TFrame", T["bg"]), ("Card.TFrame", T["card"]), ("Header.TFrame", T["header"])):
         s.configure(name, background=bg)
     s.configure("TLabel", background=T["bg"]); s.configure("Card.TLabel", background=T["card"])
+    s.configure("Warn.TLabel", background=T["bg"], foreground=T["warn"], font=FONT_S)
+    s.configure("Note.TLabel", background=T["bg"], foreground=T["muted"], font=FONT_S)
     s.configure("Muted.Card.TLabel", background=T["card"], foreground=T["muted"], font=FONT_S)
     s.configure("CardTitle.TLabel", background=T["card"], foreground=T["text"], font=FONT_T)
     s.configure("Value.Card.TLabel", background=T["card"], foreground=T["accent_hi"], font=FONT_B)
@@ -7074,8 +7076,8 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
 
     trouble_f = page(content, "Troubleshooting", "The support pack, graphics-mod warnings and the PC check. SkyTune does not upload anything.")
     ttk.Button(trouble_f, text="Support pack", style="Secondary.TButton", command=lambda: save_support_pack()).pack(anchor="w")
-    autowrap(ttk.Label(trouble_f, textvariable=mod_var, bg=T["bg"], fg=T["warn"], font=FONT_S, justify="left", wraplength=640), trouble_f, 8).pack(anchor="w", pady=(8, 0))
-    autowrap(ttk.Label(trouble_f, textvariable=health_var, bg=T["bg"], fg=T["muted"], font=FONT_S, justify="left", wraplength=640), trouble_f, 8).pack(anchor="w", pady=(6, 0))
+    autowrap(ttk.Label(trouble_f, textvariable=mod_var, style="Warn.TLabel", justify="left", wraplength=640), trouble_f, 8).pack(anchor="w", pady=(8, 0))
+    autowrap(ttk.Label(trouble_f, textvariable=health_var, style="Note.TLabel", justify="left", wraplength=640), trouble_f, 8).pack(anchor="w", pady=(6, 0))
     ttk.Button(trouble_f, text="Check my PC", style="Primary.TButton", command=lambda: (show_nav("Optimise"), auto_detect(popup=False))).pack(anchor="w", pady=(8, 0))
     def save_looks():
         folder = os.path.join(skytune_data_dir(), "looks")
@@ -7337,7 +7339,7 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         def _shot():
             root.update_idletasks(); root.update()
             wid = str(root.winfo_id()); wrote = False
-            for cmd in (["import", "-window", "root", shot_path], ["import", "-window", wid, shot_path]):
+            for cmd in (["import", "-window", wid, shot_path], ["import", "-window", "root", shot_path]):
                 try:
                     subprocess.run(cmd, check=True, timeout=20, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     wrote = True; break
