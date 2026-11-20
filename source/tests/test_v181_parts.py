@@ -87,6 +87,18 @@ class NvidiaProfile(unittest.TestCase):
         refused = m.apply_nvidia_profile(bad, reader, writer)
         self.assertFalse(refused["ok"])
         self.assertIsNone(refused["backup"])
+        self.assertTrue(m.nvidia_apps_are_simulator_only(["FlightSimulator.exe", "FlightSimulator2024.exe"]))
+        self.assertFalse(m.nvidia_apps_are_simulator_only(["FlightSimulator.exe", "OtherGame.exe"]))
+        self.assertFalse(m.nvidia_apps_are_simulator_only([]))
+        failed = m.apply_nvidia_profile(plan, reader, writer, commit=lambda: False)
+        self.assertFalse(failed["ok"])
+        self.assertFalse(failed["changed"])
+        deleted = []
+        created = {"profiles": {"FlightSimulator.exe": {"274197361": None}}, "created": ["FlightSimulator.exe"]}
+        m.restore_nvidia_profile(created, writer, delete=lambda exe: deleted.append(exe))
+        self.assertEqual(deleted, ["FlightSimulator.exe"])
+        if os.name != "nt":
+            self.assertIsNone(m.open_nvidia_session())
 
 class UpdateCatalog(unittest.TestCase):
     def test_check_reads_versions_and_does_not_download(self):

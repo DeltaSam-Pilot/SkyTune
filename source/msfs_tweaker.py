@@ -2056,11 +2056,17 @@ def nvidia_profile_plan(gpu_name):
         return None
     return {"executables": list(MSFS_NVIDIA_EXECUTABLES), "settings": [dict(item) for item in NVIDIA_PROFILE_VALUES]}
 
-def apply_nvidia_profile(plan, reader, writer):
+def nvidia_apps_are_simulator_only(names):
+    """True when every executable in the profile is one of the two simulator programs."""
+    allowed = {name.lower() for name in MSFS_NVIDIA_EXECUTABLES}
+    found = [os.path.basename(str(name)).lower() for name in (names or []) if str(name or "").strip()]
+    return bool(found) and all(name in allowed for name in found)
+
+def apply_nvidia_profile(plan, reader, writer, commit=None):
     """Back up the current values, then write. A missing plan or a failed read writes nothing."""
     if not plan:
         return {"ok": False, "changed": False, "backup": None, "error": "Nothing was changed."}
-    backup = {"profiles": {}}
+    backup = {"profiles": {}, "created": []}
     for exe in plan["executables"]:
         if os.path.basename(exe).lower() not in {name.lower() for name in MSFS_NVIDIA_EXECUTABLES}:
             return {"ok": False, "changed": False, "backup": None, "error": "SkyTune only edits the simulator profiles."}
@@ -2069,23 +2075,218 @@ def apply_nvidia_profile(plan, reader, writer):
         except Exception:
             return {"ok": False, "changed": False, "backup": None, "error": "The current profile could not be read. Nothing was written."}
         backup["profiles"][exe] = {str(item["id"]): current.get(item["id"]) for item in plan["settings"]}
-    for exe in plan["executables"]:
-        for item in plan["settings"]:
-            writer(exe, item["id"], item["value"])
+    def write_all():
+        for exe in plan["executables"]:
+            for item in plan["settings"]:
+                writer(exe, item["id"], item["value"])
+    if commit is None:
+        write_all()
+        return {"ok": True, "changed": True, "backup": backup, "error": None}
+    try:
+        write_all()
+        if not commit():
+            return {"ok": False, "changed": False, "backup": backup, "error": "The driver did not accept the change. Nothing was saved."}
+    except Exception:
+        return {"ok": False, "changed": False, "backup": backup, "error": "The driver did not accept the change. Nothing was saved."}
     return {"ok": True, "changed": True, "backup": backup, "error": None}
 
-def restore_nvidia_profile(backup, writer):
-    """Write the backed-up values and nothing else."""
+def restore_nvidia_profile(backup, writer, commit=None, delete=None):
+    """Write the backed-up values and nothing else. A profile this save created is removed instead."""
     if not isinstance(backup, dict) or not backup.get("profiles"):
         return {"ok": False, "error": "There is no NVIDIA backup to restore."}
-    for exe, values in backup["profiles"].items():
-        if os.path.basename(exe).lower() not in {name.lower() for name in MSFS_NVIDIA_EXECUTABLES}:
-            continue
-        for key, value in (values or {}).items():
-            if value is None:
+    created = {os.path.basename(str(name)).lower() for name in (backup.get("created") or [])}
+    try:
+        for exe, values in backup["profiles"].items():
+            if os.path.basename(exe).lower() not in {name.lower() for name in MSFS_NVIDIA_EXECUTABLES}:
                 continue
-            writer(exe, int(key), value)
+            if os.path.basename(exe).lower() in created:
+                if delete:
+                    delete(exe)
+                continue
+            for key, value in (values or {}).items():
+                if value is None:
+                    continue
+                writer(exe, int(key), value)
+        if commit is not None and not commit():
+            return {"ok": False, "error": "The driver did not accept the restore. Nothing was saved."}
+    except Exception:
+        if commit is None:
+            raise
+        return {"ok": False, "error": "The driver did not accept the restore. Nothing was saved."}
     return {"ok": True, "error": None}
+
+def open_nvidia_session():
+    """A driver session for the two simulator profiles, or None when the driver interface is missing."""
+    if os.name != "nt":
+        return None
+    try:
+        return _NvidiaSession()
+    except Exception:
+        return None
+
+class _NvidiaSession:
+    """NVAPI DRS for FlightSimulator.exe and FlightSimulator2024.exe. Interface ids are NVIDIA's published list."""
+
+    def __init__(self):
+        import ctypes
+        self._c = ctypes
+        self.created = []
+        self._open = False
+        self._session = ctypes.c_void_p()
+        dll = ctypes.CDLL("nvapi64.dll")
+        query = dll.nvapi_QueryInterface
+        query.restype = ctypes.c_void_p
+        query.argtypes = (ctypes.c_uint32,)
+        def bind(iid, *argtypes):
+            address = query(iid)
+            if not address:
+                raise OSError("The NVIDIA driver did not provide that call.")
+            return ctypes.CFUNCTYPE(ctypes.c_int, *argtypes)(address)
+        wide = ctypes.c_uint16 * 2048
+        binary = type("NvBinary", (ctypes.Structure,), {"_pack_": 4, "_fields_": [("valueLength", ctypes.c_uint32), ("valueData", ctypes.c_uint8 * 4096)]})
+        union = type("NvSettingValue", (ctypes.Union,), {"_pack_": 4, "_fields_": [
+            ("u32", ctypes.c_uint32), ("binary", binary), ("wsz", wide), ("u64", ctypes.c_uint64), ("f32", ctypes.c_float)]})
+        self.Setting = type("NvSetting", (ctypes.Structure,), {"_pack_": 4, "_fields_": [
+            ("version", ctypes.c_uint32), ("settingName", wide), ("settingId", ctypes.c_uint32),
+            ("settingType", ctypes.c_uint32), ("settingLocation", ctypes.c_uint32),
+            ("isCurrentPredefined", ctypes.c_uint32), ("isPredefinedValid", ctypes.c_uint32),
+            ("predefined", union), ("current", union)]})
+        self.Profile = type("NvProfile", (ctypes.Structure,), {"_pack_": 4, "_fields_": [
+            ("version", ctypes.c_uint32), ("profileName", wide), ("gpuSupport", ctypes.c_uint32),
+            ("isPredefined", ctypes.c_uint32), ("numOfApps", ctypes.c_uint32), ("numOfSettings", ctypes.c_uint32)]})
+        self.Application = type("NvApplication", (ctypes.Structure,), {"_pack_": 4, "_fields_": [
+            ("version", ctypes.c_uint32), ("isPredefined", ctypes.c_uint32), ("appName", wide),
+            ("userFriendlyName", wide), ("launcher", wide), ("fileInFolder", wide),
+            ("flags", ctypes.c_uint32), ("commandLine", wide)]})
+        self._setting_ver = ctypes.sizeof(self.Setting) | (1 << 16)
+        self._profile_ver = ctypes.sizeof(self.Profile) | (1 << 16)
+        self._app_ver = ctypes.sizeof(self.Application) | (4 << 16)
+        handle = ctypes.c_void_p
+        self._init = bind(0x0150E828)
+        self._unload = bind(0xD22BDD7E)
+        self._create = bind(0x0694D52E, ctypes.POINTER(handle))
+        self._destroy = bind(0xDAD9CFF8, handle)
+        self._load = bind(0x375DBD6B, handle)
+        self._save_settings = bind(0xFCBC7E14, handle)
+        self._create_profile = bind(0xCC176068, handle, ctypes.c_void_p, ctypes.POINTER(handle))
+        self._delete_profile = bind(0x17093206, handle, handle)
+        self._find_app = bind(0xEEE566B2, handle, ctypes.c_void_p, ctypes.POINTER(handle), ctypes.c_void_p)
+        self._create_app = bind(0x4347A9DE, handle, handle, ctypes.c_void_p)
+        self._enum_apps = bind(0x7FA2173A, handle, handle, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32), ctypes.c_void_p)
+        self._get = bind(0x73BF8338, handle, handle, ctypes.c_uint32, ctypes.c_void_p)
+        self._set = bind(0x577DD202, handle, handle, ctypes.c_void_p)
+        try:
+            if self._init() != 0:
+                raise OSError("The NVIDIA driver did not start.")
+            self._open = True
+            if self._create(ctypes.byref(self._session)) != 0 or not self._session.value:
+                raise OSError("The NVIDIA driver did not open a session.")
+            if self._load(self._session) != 0:
+                raise OSError("The NVIDIA driver profiles could not be read.")
+        except Exception:
+            self.close()
+            raise
+
+    def close(self):
+        if self._session.value:
+            try: self._destroy(self._session)
+            except Exception: pass
+            self._session = self._c.c_void_p()
+        if self._open:
+            try: self._unload()
+            except Exception: pass
+            self._open = False
+
+    def _wide(self, text):
+        buf = (self._c.c_uint16 * 2048)()
+        encoded = str(text or "").encode("utf-16-le")
+        words = [encoded[i] | (encoded[i + 1] << 8) for i in range(0, len(encoded), 2)]
+        for index, word in enumerate(words[:2047]):
+            buf[index] = word
+        return buf
+
+    def _text(self, buf):
+        chars = []
+        for word in buf:
+            if not word:
+                break
+            chars.append(chr(word))
+        return "".join(chars)
+
+    def _names(self, profile):
+        names, start = [], 0
+        while start < 32:
+            app = self.Application()
+            app.version = self._app_ver
+            count = self._c.c_uint32(1)
+            if self._enum_apps(self._session, profile, start, self._c.byref(count), self._c.byref(app)) != 0 or not count.value:
+                break
+            names.append(self._text(app.appName))
+            start += count.value
+        return names
+
+    def _profile(self, exe):
+        name = self._wide(os.path.basename(exe))
+        profile = self._c.c_void_p()
+        app = self.Application()
+        app.version = self._app_ver
+        if self._find_app(self._session, name, self._c.byref(profile), self._c.byref(app)) != 0 or not profile.value:
+            return None
+        return profile
+
+    def read(self, exe):
+        profile = self._profile(exe)
+        blank = {item["id"]: None for item in NVIDIA_PROFILE_VALUES}
+        if not profile or not nvidia_apps_are_simulator_only(self._names(profile)):
+            return blank
+        found = {}
+        for item in NVIDIA_PROFILE_VALUES:
+            setting = self.Setting()
+            setting.version = self._setting_ver
+            setting.settingId = item["id"]
+            if self._get(self._session, profile, item["id"], self._c.byref(setting)) != 0 or setting.settingType != 0:
+                found[item["id"]] = None
+            else:
+                found[item["id"]] = int(setting.current.u32)
+        return found
+
+    def write(self, exe, setting_id, value):
+        base = os.path.basename(exe)
+        if base.lower() not in {name.lower() for name in MSFS_NVIDIA_EXECUTABLES}:
+            raise OSError("SkyTune only edits the simulator profiles.")
+        profile = self._profile(exe)
+        if profile is None:
+            info = self.Profile()
+            info.version = self._profile_ver
+            info.profileName = self._wide(base)
+            profile = self._c.c_void_p()
+            if self._create_profile(self._session, self._c.byref(info), self._c.byref(profile)) != 0 or not profile.value:
+                raise OSError("The simulator profile could not be created.")
+            app = self.Application()
+            app.version = self._app_ver
+            app.appName = self._wide(base)
+            if self._create_app(self._session, profile, self._c.byref(app)) != 0:
+                raise OSError("The simulator profile could not be created.")
+            if base not in self.created:
+                self.created.append(base)
+        elif base not in self.created and not nvidia_apps_are_simulator_only(self._names(profile)):
+            raise OSError("That profile also names another program. Nothing was saved.")
+        setting = self.Setting()
+        setting.version = self._setting_ver
+        setting.settingId = int(setting_id)
+        setting.settingType = 0
+        setting.current.u32 = int(value)
+        if self._set(self._session, profile, self._c.byref(setting)) != 0:
+            raise OSError("The driver did not accept the change.")
+
+    def delete(self, exe):
+        profile = self._profile(exe)
+        if profile and nvidia_apps_are_simulator_only(self._names(profile)):
+            if self._delete_profile(self._session, profile) != 0:
+                raise OSError("The created profile could not be removed.")
+
+    def save(self):
+        return self._save_settings(self._session) == 0
 
 RESHADE_PRESETS = {
     "Natural": "[SkyTune]\nName=Natural\nTechniques=Tonemap@Tonemap.fx\n\n[Tonemap.fx]\nGamma=1.00\nExposure=0.00\n",
@@ -7226,7 +7427,7 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     ttk.Button(trouble_f, text="Save look presets", style="Secondary.TButton", command=save_looks).pack(anchor="w", pady=(8, 0))
     ttk.Button(trouble_f, text="Open ReShade download", command=lambda: open_web(RESHADE_SETUP_PAGE)).pack(anchor="w", pady=(4, 0))
 
-    nvidia_f = page(content, "NVIDIA", "Read-only. SkyTune never writes a driver profile.")
+    nvidia_f = page(content, "NVIDIA", "Save and restore only change FlightSimulator.exe and FlightSimulator2024.exe. SkyTune backs up the current values first.")
     nvidia_var = tk.StringVar(value="Not read yet.")
     autowrap(ttk.Label(nvidia_f, textvariable=nvidia_var, style="Card.TLabel", wraplength=640, justify="left"), nvidia_f, 8).pack(anchor="w")
     nvidia_steps = tk.Text(nvidia_f, height=8, bg=T["card"], fg=T["text"], relief="flat", font=FONT, wrap="word")
@@ -7252,7 +7453,22 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
                                    default="no"):
             nvidia_save_note.set("Cancelled. Nothing was written.")
             return
-        nvidia_save_note.set("The driver interface is not available here, so nothing was written. The backup step did not run.")
+        session = open_nvidia_session()
+        if session is None:
+            nvidia_save_note.set("The driver interface is not available here, so nothing was written. The backup step did not run.")
+            return
+        result = {"ok": False, "error": "The driver did not accept the change. Nothing was saved."}
+        try:
+            result = apply_nvidia_profile(plan, session.read, session.write, session.save)
+            if result["ok"]:
+                result["backup"]["created"] = list(session.created)
+                atomic_write(os.path.join(skytune_data_dir(), "nvidia-profile-backup.json"),
+                             json.dumps(result["backup"], indent=1, sort_keys=True).encode("utf-8"))
+        except OSError:
+            result = {"ok": False, "error": "The driver change could not be recorded in the backup file."}
+        finally:
+            session.close()
+        nvidia_save_note.set("Saved the two simulator profiles. The previous values are in the backup." if result["ok"] else result["error"])
     def restore_nvidia_saved():
         gpu = (st.get("hw") or {}).get("gpu") or ""
         if nvidia_profile_plan(gpu) is None:
@@ -7262,9 +7478,25 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         if not os.path.isfile(path):
             nvidia_save_note.set("There is no NVIDIA backup to restore.")
             return
-        if not messagebox.askyesno(SHORT_NAME, "Restore the backed-up NVIDIA values for the two simulator profiles?", default="no"):
+        if not messagebox.askyesno(SHORT_NAME, "Restore the backed-up NVIDIA values for the two simulator profiles?\n\nThis writes the backup back to the driver. This is your choice and your risk.", default="no"):
+            nvidia_save_note.set("Cancelled. Nothing was written.")
             return
-        nvidia_save_note.set("The driver interface is not available here, so the backup was not written back.")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                backup = json.load(handle)
+        except (OSError, ValueError):
+            nvidia_save_note.set("The NVIDIA backup could not be read. Nothing was written.")
+            return
+        session = open_nvidia_session()
+        if session is None:
+            nvidia_save_note.set("The driver interface is not available here, so the backup was not written back.")
+            return
+        result = {"ok": False, "error": "The driver did not accept the restore. Nothing was saved."}
+        try:
+            result = restore_nvidia_profile(backup, session.write, session.save, session.delete)
+        finally:
+            session.close()
+        nvidia_save_note.set("Restored the backed-up simulator profiles." if result["ok"] else result["error"])
     ttk.Button(nvidia_f, text="Save profile", style="Secondary.TButton", command=save_nvidia_profile).pack(anchor="w", pady=(6, 0))
     ttk.Button(nvidia_f, text="Restore backup", style="Secondary.TButton", command=restore_nvidia_saved).pack(anchor="w", pady=(4, 0))
 
