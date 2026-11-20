@@ -3,7 +3,7 @@
 ## v1.8.1 – 2026-11-20
 A small update on top of 1.8.0. The window has a sidebar, and settings are still written only after you confirm.
 
-- **Home.** A status line shows the sim SkyTune found, the SkyTune version, and the last apply. Cards open Optimise, Sims, Tools, Troubleshooting and Settings.
+- **Home.** A status line shows the sim SkyTune found, the SkyTune version, and the last apply. Cards open Optimise, Sims, Tools, Troubleshooting and Settings. Optimise and Tools stay visible beside the sidebar.
 - **Sims.** MSFS 2020 and 2024 are listed for Steam, the Microsoft Store, and a custom Community folder when that path is in the settings file.
 - **Sims.** Each detected install lists the Community packages by the names on disk. SkyTune only reads that folder.
 - **Optional mods.** On the Sims page you can install, repair or remove AtmosphereMod by tomwhoca and the Glass Cockpit DLSS fix add-on by IFreemz. SkyTune downloads each author's latest official release only after you click, checks the size and checksum, and links the licence. It remembers the files it copied and backs up anything it replaces. Uninstall puts those files back. Other Community packages are left as they are. A clash warning still appears when AtmosphereMod is already installed.
