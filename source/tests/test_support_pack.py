@@ -195,12 +195,14 @@ def _can_display():
 class SupportPackButton(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.mkdtemp(); self.old = dict(os.environ)
-        fs = os.path.join(self.home, ".steam", "steam", "steamapps", "compatdata", "2537590", "pfx", "drive_c",
-                          "users", "steamuser", "AppData", "Roaming", "Microsoft Flight Simulator 2024")
+        roaming = os.path.join(self.home, "Roaming")
+        fs = os.path.join(roaming, "Microsoft Flight Simulator 2024")
         os.makedirs(fs)
         shutil.copy(S24, os.path.join(fs, "UserCfg.opt"))
         os.environ["HOME"] = self.home
-        os.environ.pop("APPDATA", None); os.environ.pop("LOCALAPPDATA", None)
+        os.environ["USERPROFILE"] = self.home
+        os.environ["APPDATA"] = roaming
+        os.environ["LOCALAPPDATA"] = os.path.join(self.home, "Local")
         os.environ["XDG_CONFIG_HOME"] = os.path.join(self.home, ".config")
         import tkinter.messagebox
         m.messagebox = tkinter.messagebox
