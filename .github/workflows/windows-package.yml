@@ -21,6 +21,12 @@ jobs:
       - name: Build SkyTune.exe
         working-directory: source
         run: python -m PyInstaller --onefile --windowed --name SkyTune --icon assets\app.ico --version-file assets\version_info.txt --add-data "assets\app.ico;." --add-data "assets\app.png;assets" --exclude-module email --exclude-module html --exclude-module xml --exclude-module unittest --exclude-module pydoc --exclude-module pydoc_data --exclude-module doctest --exclude-module pdb --exclude-module xmlrpc --exclude-module sqlite3 --exclude-module lib2to3 --exclude-module tkinter.tix --exclude-module tkinter.test --exclude-module test --exclude-module distutils --exclude-module setuptools --exclude-module pip --exclude-module asyncio --exclude-module decimal --exclude-module _decimal --exclude-module _pydecimal --exclude-module fractions --exclude-module statistics --exclude-module lzma --exclude-module _lzma --exclude-module bz2 --exclude-module _bz2 --noconfirm msfs_tweaker.py
+      - name: Build the per-user installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "source\SkyTune.iss"
       - name: Pack the Flightsim.to zip
         shell: python
         run: |

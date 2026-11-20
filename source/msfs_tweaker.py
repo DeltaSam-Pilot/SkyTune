@@ -1352,7 +1352,19 @@ def _newest_backup_file(cfg_path):
         return ""
     return os.path.join(folder, sorted(names)[-1])
 
-def build_support_pack(cfg_path=None, edition=None, hw=None, health=None, state_path=None, now=None):
+def mod_logs(program_dirs):
+    """OptiScaler and ReShade logs that already sit next to a simulator executable. Read only."""
+    found = []
+    for folder in program_dirs or []:
+        if not folder or not os.path.isdir(folder):
+            continue
+        for name in ("OptiScaler.log", "ReShade.log"):
+            path = os.path.join(folder, name)
+            if os.path.isfile(path):
+                found.append((name, path))
+    return found
+
+def build_support_pack(cfg_path=None, edition=None, hw=None, health=None, state_path=None, now=None, extra_logs=()):
     """The files a support pack would contain. Reads SkyTune's own notes and the sim settings file. Writes nothing."""
     now = now or datetime.datetime.now()
     edition = edition if edition in ("2020", "2024") else "unknown"
@@ -1386,6 +1398,13 @@ def build_support_pack(cfg_path=None, edition=None, hw=None, health=None, state_
         current = _cfg_text(cfg_path)
         if current:
             files.append({"name": "UserCfg.opt", "text": mask_personal(current)})
+    seen = {item["name"] for item in files}
+    for name, path in extra_logs or ():
+        if name not in ("OptiScaler.log", "ReShade.log") or name in seen:
+            continue
+        if path and os.path.isfile(path):
+            files.append({"name": name, "text": mask_personal(_read_text_file(path))})
+            seen.add(name)
     clean = []
     for item in files:
         text = mask_personal(item["text"])
@@ -1544,7 +1563,7 @@ def graphics_mod_warnings(found):
 # ---------------------------------------------------------------- v1.8.1 sims, optional mods, update notice, NVIDIA notes
 # SkyTune never bundles these mods. A download happens only after a click, and only from the author's own release.
 FLIGHTSIM_PAGE = "https://flightsim.to/addon/117307/sky-tune"
-NAV_PAGES = ("Home", "Sims", "Optimise", "Tools", "Troubleshooting", "NVIDIA", "Settings")
+NAV_PAGES = ("Home", "Sims", "Optimise", "Tools", "Troubleshooting", "NVIDIA", "Updates", "Settings")
 OFFICIAL_MODS = (
     {"id": "atmosphere", "name": "AtmosphereMod", "author": "tomwhoca",
      "repo": "tomwhoca/AtmosphereMod", "page": "https://github.com/tomwhoca/AtmosphereMod",
@@ -1557,6 +1576,11 @@ OFFICIAL_MODS = (
      "licence": "https://github.com/IFreemz/msfs2024-glass-cockpit-dlss-fix/blob/main/LICENSE",
      "credit": "The Glass Cockpit DLSS fix is by IFreemz. SkyTune does not redistribute it.",
      "note": "SkyTune copies the author's add-on file only. It does not install ReShade and it does not install a DLL loader."},
+    {"id": "optiscaler", "name": "OptiScaler (upscaling + frame generation)", "author": "OptiScaler",
+     "repo": "optiscaler/OptiScaler", "page": "https://github.com/optiscaler/OptiScaler",
+     "licence": "https://github.com/optiscaler/OptiScaler/blob/master/LICENSE",
+     "credit": "OptiScaler is by its authors and is GPL-3.0. SkyTune does not redistribute it.",
+     "note": "This adds the author's files to the simulator folder. It can crash or break after a sim update. It is your choice and your risk. SkyTune downloads the latest official release only after you click."},
 )
 NVIDIA_RECOMMENDED = (
     ("Power management", "Prefer maximum performance", "NVIDIA app, Graphics, Flight Simulator, Power management mode."),
@@ -1648,6 +1672,11 @@ def choose_release_asset(mod_id, release):
         for asset in assets:
             name = str(asset.get("name") or "")
             if name.startswith("AtmosphereMod-") and name.endswith(".zip"):
+                return asset
+    if mod_id == "optiscaler":
+        for asset in assets:
+            name = str(asset.get("name") or "")
+            if name.lower().startswith("optiscaler") and name.lower().endswith((".7z", ".zip")):
                 return asset
     return None
 
@@ -1770,6 +1799,31 @@ def install_atmosphere_payload(zip_bytes, exe_dir, community_dir, local_dir, rec
         placed.append(dest)
     return {"ok": True, "error": None, "files": placed}
 
+def install_optiscaler_files(files, exe_dir, record, version):
+    """Place the author's files next to the simulator. OptiScaler.dll is saved as dxgi.dll, the documented DX12 name.
+
+    files maps an archive name to bytes. Source files are ignored. Every written path is recorded.
+    """
+    if not exe_dir or not os.path.isdir(exe_dir):
+        return {"ok": False, "error": "SkyTune couldn't find the simulator program folder. Nothing was installed."}
+    if not isinstance(files, dict) or not files:
+        return {"ok": False, "error": "The author's download had no files SkyTune can place."}
+    placed = []
+    for raw_name, data in files.items():
+        safe = _safe_arc_name(raw_name)
+        base = os.path.basename(safe)
+        if not base or not base.lower().endswith((".dll", ".ini")):
+            continue
+        dest_name = "dxgi.dll" if base.lower() == "optiscaler.dll" else base
+        dest = os.path.join(exe_dir, dest_name)
+        existed = os.path.exists(dest)
+        backup = _backup_and_write(dest, data)
+        _remember_mod_file(record, "optiscaler", version, dest, backup, not existed)
+        placed.append(dest)
+    if not placed:
+        return {"ok": False, "error": "The author's download had no files SkyTune can place."}
+    return {"ok": True, "error": None, "files": placed}
+
 def uninstall_managed_mod(record, mod_id):
     """Put back files this install replaced, and delete files it added. Other files stay."""
     row = next((item for item in (record.get("mods") or []) if item.get("id") == mod_id), None)
@@ -1868,6 +1922,116 @@ def apply_optiscaler_choice(text, choice):
     updated = _set_ini_key(updated, "Sharpness", "OverrideSharpness", "true")
     updated = _set_ini_key(updated, "Sharpness", "Sharpness", choice["sharpness"])
     return updated
+
+def neural_choices(gpu_name):
+    """Neural or AI paths OptiScaler documents for this card. No path is called running here."""
+    saved = "saved in your settings"
+    options = []
+    if rtx_card(gpu_name):
+        options.append({"id": "dlss", "label": "DLSS", "saved": saved})
+    if re.search(r"\bRX\s*9\d{3}\b", gpu_name or "", re.I):
+        options.append({"id": "fsr_neural", "label": "FSR neural upscaler", "saved": saved})
+    if gpu_vendor(gpu_name) == "intel" and re.search(r"\bArc\b", gpu_name or "", re.I):
+        options.append({"id": "xess", "label": "XeSS", "saved": saved})
+    return options
+
+def neural_status(gpu_name, log_text=""):
+    """Mark a path observed only when the log says it initialised. Otherwise it is only saved."""
+    evidence = {
+        "dlss": r"DLSS.{0,40}(init|selected|loaded)",
+        "fsr_neural": r"FSR\s*4.{0,40}(init|selected|loaded)",
+        "xess": r"XeSS.{0,40}(init|selected|loaded)",
+    }
+    rows = []
+    for item in neural_choices(gpu_name):
+        seen = bool(re.search(evidence[item["id"]], log_text or "", re.I | re.S))
+        row = dict(item)
+        row["observed"] = seen
+        row["state"] = "observed in the log" if seen else "saved in your settings"
+        rows.append(row)
+    return rows
+
+MSFS_NVIDIA_EXECUTABLES = ("FlightSimulator.exe", "FlightSimulator2024.exe")
+NVIDIA_PROFILE_VALUES = (
+    {"id": 0x1057EB71, "value": 0x00000001, "label": "Power management mode"},
+    {"id": 0x00A879CF, "value": 0x60925292, "label": "Vertical sync"},
+    {"id": 0x007BA09E, "value": 1, "label": "Pre-rendered frames"},
+)
+
+def nvidia_profile_plan(gpu_name):
+    """Settings for the two simulator executables, or None when the card is not NVIDIA."""
+    if gpu_vendor(gpu_name) != "nvidia":
+        return None
+    return {"executables": list(MSFS_NVIDIA_EXECUTABLES), "settings": [dict(item) for item in NVIDIA_PROFILE_VALUES]}
+
+def apply_nvidia_profile(plan, reader, writer):
+    """Back up the current values, then write. A missing plan or a failed read writes nothing."""
+    if not plan:
+        return {"ok": False, "changed": False, "backup": None, "error": "Nothing was changed."}
+    backup = {"profiles": {}}
+    for exe in plan["executables"]:
+        if os.path.basename(exe).lower() not in {name.lower() for name in MSFS_NVIDIA_EXECUTABLES}:
+            return {"ok": False, "changed": False, "backup": None, "error": "SkyTune only edits the simulator profiles."}
+        try:
+            current = reader(exe) or {}
+        except Exception:
+            return {"ok": False, "changed": False, "backup": None, "error": "The current profile could not be read. Nothing was written."}
+        backup["profiles"][exe] = {str(item["id"]): current.get(item["id"]) for item in plan["settings"]}
+    for exe in plan["executables"]:
+        for item in plan["settings"]:
+            writer(exe, item["id"], item["value"])
+    return {"ok": True, "changed": True, "backup": backup, "error": None}
+
+def restore_nvidia_profile(backup, writer):
+    """Write the backed-up values and nothing else."""
+    if not isinstance(backup, dict) or not backup.get("profiles"):
+        return {"ok": False, "error": "There is no NVIDIA backup to restore."}
+    for exe, values in backup["profiles"].items():
+        if os.path.basename(exe).lower() not in {name.lower() for name in MSFS_NVIDIA_EXECUTABLES}:
+            continue
+        for key, value in (values or {}).items():
+            if value is None:
+                continue
+            writer(exe, int(key), value)
+    return {"ok": True, "error": None}
+
+RESHADE_PRESETS = {
+    "Natural": "[SkyTune]\nName=Natural\nTechniques=Tonemap@Tonemap.fx\n\n[Tonemap.fx]\nGamma=1.00\nExposure=0.00\n",
+    "Vivid": "[SkyTune]\nName=Vivid\nTechniques=Colourfulness@Colourfulness.fx,Tonemap@Tonemap.fx\n\n[Colourfulness.fx]\nColourfulness=0.35\n\n[Tonemap.fx]\nGamma=0.98\n",
+    "Cinematic": "[SkyTune]\nName=Cinematic\nTechniques=Curves@Curves.fx,Tonemap@Tonemap.fx\n\n[Curves.fx]\nContrast=0.55\n\n[Tonemap.fx]\nGamma=1.05\nBleach=0.15\n",
+}
+RESHADE_SETUP_PAGE = "https://reshade.me"
+
+def reshade_preset_text(name):
+    return RESHADE_PRESETS.get(name, "")
+
+def write_reshade_presets(folder, record):
+    """Write SkyTune's three preset files. Shader source is not included."""
+    if not folder:
+        return {"ok": False, "error": "Choose a folder first. Nothing was written.", "files": []}
+    os.makedirs(folder, exist_ok=True)
+    written = []
+    for name, text in RESHADE_PRESETS.items():
+        dest = os.path.join(folder, "SkyTune-%s.ini" % name)
+        added = not os.path.exists(dest)
+        backup = _backup_and_write(dest, text.encode("utf-8"))
+        _remember_mod_file(record, "reshade", "presets", dest, backup, added)
+        written.append(dest)
+    return {"ok": True, "error": None, "files": written}
+
+def overlay_text(fps, preset):
+    """One line for the separate overlay window. A missing frame rate is not invented."""
+    rate = "FPS not read" if fps is None else "%s FPS" % fps
+    name = preset or "no preset"
+    return "%s · %s · saved in your settings" % (rate, name)
+
+UPDATE_CATALOG = (
+    {"id": "skytune", "name": "SkyTune", "page": FLIGHTSIM_PAGE},
+    {"id": "optiscaler", "name": "OptiScaler", "page": "https://github.com/optiscaler/OptiScaler/releases/latest"},
+    {"id": "reshade", "name": "ReShade", "page": RESHADE_SETUP_PAGE},
+    {"id": "glass", "name": "Glass Cockpit DLSS fix", "page": "https://github.com/IFreemz/msfs2024-glass-cockpit-dlss-fix/releases/latest"},
+    {"id": "atmosphere", "name": "AtmosphereMod", "page": "https://github.com/tomwhoca/AtmosphereMod/releases/latest"},
+)
 
 def read_nvidia_status(runner=None):
     """Read-only. A missing tool becomes a sentence, never a driver change."""
@@ -6506,7 +6670,8 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
             messagebox.showerror(SHORT_NAME, "Couldn't save the diagnostic:\n%s" % e); return
         set_status("Diagnostic saved on this PC. It was not uploaded.")
     def save_support_pack():
-        entries = build_support_pack(st.get("path"), st.get("edition"), st.get("hw"), st.get("health"))
+        entries = build_support_pack(st.get("path"), st.get("edition"), st.get("hw"), st.get("health"),
+                                      extra_logs=mod_logs(sim_program_dirs()))
         names = support_pack_names(entries)
         if not names:
             set_status("There is nothing to put in a support pack yet.", "warn"); return
@@ -6753,7 +6918,7 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         if name not in NAV_PAGES:
             name = "Home"
         st["nav"] = name
-        for widget in (simple_outer, body, ban, home_f, sims_f, trouble_f, nvidia_f, settings_f):
+        for widget in (simple_outer, body, ban, home_f, sims_f, trouble_f, nvidia_f, updates_f, settings_f):
             try: widget.pack_forget()
             except tk.TclError: pass
         try:
@@ -6776,6 +6941,8 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
             trouble_f.pack(in_=content, fill="both", expand=True)
         elif name == "NVIDIA":
             nvidia_f.pack(in_=content, fill="both", expand=True)
+        elif name == "Updates":
+            updates_f.pack(in_=content, fill="both", expand=True)
         else:
             settings_f.pack(in_=content, fill="both", expand=True)
         paint_nav(name)
@@ -6870,6 +7037,9 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         if opti_fg.get() not in opti_fg_box.cget("values"):
             opti_fg.set("Off")
         opti_summary.set("%s and %s are saved in your settings." % (opti_up.get(), opti_fg.get()))
+        neural = neural_status(gpu, "")
+        if neural:
+            opti_summary.set(opti_summary.get() + " " + " ".join("%s is %s." % (row["label"], row["state"]) for row in neural))
     ttk.Label(opti_box, text="Upscaler", style="Muted.Card.TLabel").pack(anchor="w", pady=(6, 0))
     opti_up_box.pack(anchor="w")
     ttk.Label(opti_box, text="Frame generation", style="Muted.Card.TLabel").pack(anchor="w", pady=(4, 0))
@@ -6907,6 +7077,18 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     autowrap(ttk.Label(trouble_f, textvariable=mod_var, bg=T["bg"], fg=T["warn"], font=FONT_S, justify="left", wraplength=640), trouble_f, 8).pack(anchor="w", pady=(8, 0))
     autowrap(ttk.Label(trouble_f, textvariable=health_var, bg=T["bg"], fg=T["muted"], font=FONT_S, justify="left", wraplength=640), trouble_f, 8).pack(anchor="w", pady=(6, 0))
     ttk.Button(trouble_f, text="Check my PC", style="Primary.TButton", command=lambda: (show_nav("Optimise"), auto_detect(popup=False))).pack(anchor="w", pady=(8, 0))
+    def save_looks():
+        folder = os.path.join(skytune_data_dir(), "looks")
+        record_path = os.path.join(skytune_data_dir(), "managed_mods.json")
+        record = load_mod_record(record_path)
+        result = write_reshade_presets(folder, record)
+        if result["ok"]:
+            save_mod_record(record_path, record)
+            set_status("Saved Natural, Vivid and Cinematic presets. ReShade itself is not included.")
+        else:
+            set_status(result["error"], "err")
+    ttk.Button(trouble_f, text="Save look presets", style="Secondary.TButton", command=save_looks).pack(anchor="w", pady=(8, 0))
+    ttk.Button(trouble_f, text="Open ReShade download", command=lambda: open_web(RESHADE_SETUP_PAGE)).pack(anchor="w", pady=(4, 0))
 
     nvidia_f = page(content, "NVIDIA", "Read-only. SkyTune never writes a driver profile.")
     nvidia_var = tk.StringVar(value="Not read yet.")
@@ -6921,6 +7103,46 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         nvidia_steps.config(state="disabled")
     ttk.Button(nvidia_f, text="Read driver", style="Secondary.TButton", command=lambda: run_bg(read_nvidia_status, fill_nvidia, "Reading the NVIDIA driver…")).pack(anchor="w", pady=(8, 0))
     fill_nvidia(read_nvidia_status(lambda: ""))
+    nvidia_save_note = tk.StringVar(value="")
+    ttk.Label(nvidia_f, textvariable=nvidia_save_note, style="Muted.Card.TLabel", wraplength=640, justify="left").pack(anchor="w", pady=(8, 0))
+    def save_nvidia_profile():
+        gpu = (st.get("hw") or {}).get("gpu") or ""
+        plan = nvidia_profile_plan(gpu)
+        if not plan:
+            nvidia_save_note.set("This card is not NVIDIA. Nothing was changed.")
+            return
+        if not messagebox.askyesno(SHORT_NAME, "Save NVIDIA profile values for FlightSimulator.exe and FlightSimulator2024.exe only?\n\n"
+                                   "SkyTune backs up the current values first. Changing a driver profile can affect the simulator. This is your choice and your risk.",
+                                   default="no"):
+            nvidia_save_note.set("Cancelled. Nothing was written.")
+            return
+        nvidia_save_note.set("The driver interface is not available here, so nothing was written. The backup step did not run.")
+    def restore_nvidia_saved():
+        gpu = (st.get("hw") or {}).get("gpu") or ""
+        if nvidia_profile_plan(gpu) is None:
+            nvidia_save_note.set("This card is not NVIDIA. Nothing was changed.")
+            return
+        path = os.path.join(skytune_data_dir(), "nvidia-profile-backup.json")
+        if not os.path.isfile(path):
+            nvidia_save_note.set("There is no NVIDIA backup to restore.")
+            return
+        if not messagebox.askyesno(SHORT_NAME, "Restore the backed-up NVIDIA values for the two simulator profiles?", default="no"):
+            return
+        nvidia_save_note.set("The driver interface is not available here, so the backup was not written back.")
+    ttk.Button(nvidia_f, text="Save profile", style="Secondary.TButton", command=save_nvidia_profile).pack(anchor="w", pady=(6, 0))
+    ttk.Button(nvidia_f, text="Restore backup", style="Secondary.TButton", command=restore_nvidia_saved).pack(anchor="w", pady=(4, 0))
+
+    updates_f = page(content, "Updates", "SkyTune checks these official pages only when you click. Nothing is downloaded until you confirm an install.")
+    updates_var = tk.StringVar(value="Not checked yet.")
+    ttk.Label(updates_f, textvariable=updates_var, style="Card.TLabel", wraplength=640, justify="left").pack(anchor="w")
+    def check_updates_now():
+        lines = []
+        for item in UPDATE_CATALOG:
+            lines.append("%s · %s" % (item["name"], item["page"]))
+        updates_var.set("\n".join(lines) + "\nOpened nothing. Use the button for one page.")
+    ttk.Button(updates_f, text="Check official pages", style="Secondary.TButton", command=check_updates_now).pack(anchor="w", pady=(8, 0))
+    for item in UPDATE_CATALOG:
+        ttk.Button(updates_f, text="Open %s" % item["name"], command=lambda url=item["page"]: open_web(url)).pack(anchor="w", pady=2)
 
     settings_f = page(content, "Settings", "Updates open the Flightsim.to page. SkyTune does not download or install them.")
     updates_on = tk.BooleanVar(value=bool(PREFS.get("check_updates", True)))
@@ -7008,6 +7230,21 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
                 result = install_glass_addon(data, exe_dir, record, version)
             elif spec["id"] == "atmosphere":
                 result = install_atmosphere_payload(data, exe_dir, community, local_dir, record, version)
+            elif spec["id"] == "optiscaler":
+                name = str(asset.get("name") or "")
+                if not name.lower().endswith(".zip"):
+                    return {"ok": False, "error": "The author's release was checked, but SkyTune does not unpack a 7z archive. Nothing was installed."}
+                import io, zipfile
+                try:
+                    archive = zipfile.ZipFile(io.BytesIO(data))
+                except zipfile.BadZipFile:
+                    return {"ok": False, "error": "The author's download was not a complete zip. Nothing was installed."}
+                files = {}
+                for raw in archive.namelist():
+                    safe = _safe_arc_name(raw)
+                    if safe.lower().endswith((".dll", ".ini")):
+                        files[safe] = archive.read(raw)
+                result = install_optiscaler_files(files, exe_dir, record, version)
             else:
                 return {"ok": False, "error": "SkyTune does not install that mod."}
             if result.get("ok"):
@@ -7033,6 +7270,26 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     place_sidebar()
     root.bind("<Configure>", lambda _e: place_sidebar(), add="+")
     paint_nav("Home")
+    overlay_win = {"widget": None}
+    def toggle_overlay(_event=None):
+        current = overlay_win.get("widget")
+        if current is not None:
+            try:
+                if current.winfo_exists():
+                    current.destroy()
+                    overlay_win["widget"] = None
+                    return
+            except tk.TclError:
+                overlay_win["widget"] = None
+        dlg = tk.Toplevel(root)
+        dlg.title("SkyTune overlay")
+        dlg.attributes("-topmost", True)
+        dlg.geometry("420x72+40+40")
+        dlg.configure(bg=T["card"])
+        tk.Label(dlg, text=overlay_text(None, opti_up.get() or "no preset"), bg=T["card"], fg=T["text"],
+                 font=FONT_S, wraplength=400, justify="left").pack(fill="both", expand=True, padx=8, pady=8)
+        overlay_win["widget"] = dlg
+    root.bind("<F8>", toggle_overlay)
 
     root.after(100, first_launch)
     if os.environ.get("SKYTUNE_PROBE"):           # developer start-up timing hook (perf measurements only)
