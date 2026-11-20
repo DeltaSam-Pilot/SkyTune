@@ -15,13 +15,13 @@ def product_root():
 
 class Version(unittest.TestCase):
     def test_version_everywhere(self):
-        self.assertEqual(m.VERSION, "1.8.1")
+        self.assertEqual(m.VERSION, "1.8.2")
         source = os.path.dirname(HERE)
         with open(os.path.join(source, "assets", "version_info.txt"), encoding="utf-8") as f: vi = f.read()
-        self.assertIn("(1,8,1,0)", vi.replace(" ", "")); self.assertIn("'1.8.1'", vi)
+        self.assertIn("(1,8,2,0)", vi.replace(" ", "")); self.assertIn("'1.8.2'", vi)
         self.assertNotIn("1.7.0", vi); self.assertNotIn("1.6.0", vi); self.assertNotIn("1.5.0", vi)
         for f in ("README.md", "CHANGELOG.md", "DETAILS.md"):
-            with open(os.path.join(product_root(), f), encoding="utf-8") as fh: self.assertIn("1.8.1", fh.read(), f)
+            with open(os.path.join(product_root(), f), encoding="utf-8") as fh: self.assertIn("1.8.2", fh.read(), f)
         with open(os.path.join(product_root(), "CHANGELOG.md"), encoding="utf-8") as fh: self.assertIn("1.3.2", fh.read())
 
 class InFileLabels(unittest.TestCase):

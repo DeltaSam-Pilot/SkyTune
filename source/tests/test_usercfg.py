@@ -154,4 +154,4 @@ class Plain(unittest.TestCase):
     def test_simple_presets_exist(self):
         for p in m.SIMPLE_PRESETS: self.assertIn(p, m.PRESETS)
     def test_names(self):
-        self.assertEqual(m.APP_NAME, "SkyTune for MSFS 2020/2024"); self.assertEqual(m.VERSION, "1.8.1")
+        self.assertEqual(m.APP_NAME, "SkyTune for MSFS 2020/2024"); self.assertEqual(m.VERSION, "1.8.2")

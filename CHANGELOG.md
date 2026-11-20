@@ -1,5 +1,8 @@
 # Changelog – SkyTune for MSFS 2020/2024
 
+## v1.8.2 – 2026-11-20
+Fixed a start-up error: No module named email.
+
 ## v1.8.1 – 2026-11-20
 A small update on top of 1.8.0. The window has a sidebar, and settings are still written only after you confirm.
 

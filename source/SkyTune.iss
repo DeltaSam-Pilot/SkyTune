@@ -1,7 +1,7 @@
 ; Per-user installer. It does not ask for administrator rights.
 ; Uninstall removes only the program folder. Settings backups and Community packages are not deleted.
 #define MyAppName "SkyTune"
-#define MyAppVersion "1.8.1"
+#define MyAppVersion "1.8.2"
 
 [Setup]
 AppId={{8F4C2A91-6B17-4E5A-9D33-7A1E0C5B2D44}
@@ -11,7 +11,7 @@ DefaultDirName={localappdata}\SkyTune
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 OutputDir=installer-out
-OutputBaseFilename=SkyTune-1.8.1-setup
+OutputBaseFilename=SkyTune-1.8.2-setup
 Compression=lzma2
 SolidCompression=yes
 UninstallDisplayIcon={app}\SkyTune.exe

@@ -29,7 +29,7 @@ urllib, base64, difflib, socket = _Lazy(_imp_urllib), _Lazy(_imp_base64), _Lazy(
 
 APP_NAME = "SkyTune for MSFS 2020/2024"
 SHORT_NAME = "SkyTune"
-VERSION = "1.8.1"
+VERSION = "1.8.2"
 # The other entry point may set EXTRA before the window opens. This file does not name that build.
 EXTRA = None
 SIM_PROCESS = "FlightSimulator2024.exe"
@@ -120,7 +120,7 @@ def candidate_paths(home=None, env=None):
         ("MSFS 2024 · MS Store / Xbox", os.path.join(local, "Packages", STORE_PKG, "LocalCache", "UserCfg.opt")),
         ("MSFS 2020 · Steam", os.path.join(appdata, "Microsoft Flight Simulator", "UserCfg.opt")),
         ("MSFS 2020 · MS Store / Xbox", os.path.join(local, "Packages", STORE_PKG_2020, "LocalCache", "UserCfg.opt")),
-    ]
+    ] + proton_profiles(home)
 
 def detect_usercfgs(home=None, env=None):
     """Return every existing supported config in priority order, including installations side by side."""
@@ -329,6 +329,33 @@ def plain_error(exc):
     if not first or "Traceback" in text or first.startswith("[Errno"):
         return "Something went wrong, and nothing was written. Close the simulator and try again."
     return first[:400]
+
+def status_sentence(exc):
+    """A short status-bar sentence. The technical text stays behind Details."""
+    if isinstance(exc, ModuleNotFoundError):
+        return "A required part of SkyTune did not load. Nothing was changed."
+    return plain_error(exc)
+
+FROZEN_MODULES = ("email", "email.parser", "http", "http.client", "urllib", "urllib.request", "ssl", "json", "zipfile", "ctypes", "hashlib")
+
+def frozen_import_check(modules=FROZEN_MODULES):
+    """Import the standard-library modules the frozen app needs. Missing names are returned, not raised."""
+    missing = []
+    for name in modules:
+        try:
+            __import__(name)
+        except ModuleNotFoundError as exc:
+            missing.append("%s (%s)" % (name, exc))
+    return missing
+
+def log_ui_error(exc):
+    """Append one UI failure to SkyTune's own log. Never raises."""
+    try:
+        folder = skytune_data_dir()
+        with open(os.path.join(folder, "ui-log.txt"), "a", encoding="utf-8") as handle:
+            handle.write("%s  %s\n" % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), exc))
+    except Exception:
+        pass
 
 HELP_PAGES = (
     ("Start", "SkyTune works in three steps.\n\n1. Close the simulator. Click Find file, or Browse if your install is in a custom folder.\n2. Click Check my PC, then pick Best visuals, Balanced, or Smooth & steady.\n3. Read the list in Step 3. Click Optimise, then Yes, write. Cancel leaves the file alone."),
@@ -4815,7 +4842,7 @@ def ai_guide_text():
     return AI_GUIDE_TITLE + "\n\n" + "\n\n".join("%s\n%s" % (h, t) for h, t in AI_GUIDE)
 
 UI_FONTS = ("Segoe UI", "Segoe UI Variable Text", "Inter", "Noto Sans", "DejaVu Sans")
-TYPE = {"h1": 18, "title": 12, "body": 10, "hint": 9, "small": 8}     # v1.3.2 type scale (points): header/title/body/hint
+TYPE = {"h1": 20, "title": 16, "body": 11, "hint": 11, "small": 11}
 SPACE = 4                                                              # v1.3.2 spacing grid (px at 96 DPI)
 
 def pick_font(root, candidates=UI_FONTS):
@@ -4888,7 +4915,7 @@ def corner_pixels(r, outside, border, fill, ss=3):
 # ---------------------------------------------------------------- GUI
 THEME = {
     "bg": "#0b1220", "header": "#0e1729", "card": "#141e30", "card2": "#1b273c", "border": "#26354f",
-    "text": "#e8eef7", "muted": "#97a8c0", "accent": "#38bdf8", "accent_hi": "#7dd3fc", "accent_dk": "#0284c7",
+    "text": "#f4f8fd", "muted": "#d5e2f2", "accent": "#38bdf8", "accent_hi": "#7dd3fc", "accent_dk": "#0284c7",
     "danger": "#f87171", "danger_dk": "#b91c1c", "warn": "#fbbf24", "ok": "#34d399", "field": "#0f1828",
     # v1.3.2: interaction states and selection tint – every text/background pair is at least 4.5:1 (WCAG AA)
     "hover": "#24344f", "pressed": "#152036", "line": "#33476a", "primary": "#0369a1", "primary_hi": "#0277b6",
@@ -4949,7 +4976,13 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     ww, wh = min(int(1300 * DPIF), int(sw * 0.96)), min(int(1000 * DPIF), int(sh * 0.90))
     root.geometry("%dx%d+%d+%d" % (ww, wh, max(0, (sw - ww) // 2), max(0, (sh - wh) // 3)))
     root.minsize(min(640, ww), min(460, wh)); root.resizable(True, True)
-    if geometry: root.geometry(geometry)
+    if geometry:
+        root.geometry(geometry)
+    elif "--layout-check" not in sys.argv and "--smoke" not in sys.argv:
+        saved_geo = load_state().get("window_geometry")
+        if isinstance(saved_geo, str) and "x" in saved_geo:
+            try: root.geometry(saved_geo)
+            except tk.TclError: pass
     if (sw <= 1366 or sh <= 820) and not geometry:
         try: root.state("zoomed")
         except Exception: pass
@@ -5196,9 +5229,23 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     dot = tk.Label(sbar, text="●", bg=T["header"], fg=T["ok"], font=FONT_S); dot.pack(side="left", padx=(px(14), 0))
     spin = tk.Label(sbar, bg=T["header"], bd=0, padx=0, pady=0)            # shown instead of the dot while busy
     status_lbl = ttk.Label(sbar, textvariable=status, style="Status.TLabel"); status_lbl.pack(side="left")
+    status_detail = {"text": ""}
+    details_link = tk.Label(sbar, text="Details", bg=T["header"], fg=T["accent_hi"], font=(F, 11, "underline"), cursor="hand2")
+    def show_status_detail(_=None):
+        if status_detail["text"]:
+            messagebox.showinfo(SHORT_NAME, status_detail["text"], parent=root)
+    details_link.bind("<Button-1>", show_status_detail)
+    details_link.bind("<Return>", show_status_detail)
     ttk.Label(sbar, text="MSFS 2020/2024 · automatic backups in UserCfg_backups", style="StatusNote.TLabel").pack(side="right")
-    def set_status(msg, kind="ok"):
-        status.set(msg); dot.configure(fg={"ok": T["ok"], "warn": T["warn"], "err": T["danger"], "info": T["accent"]}[kind])
+    def set_status(msg, kind="ok", detail=None):
+        status.set(msg)
+        status_detail["text"] = detail or ""
+        dot.configure(fg={"ok": T["ok"], "warn": T["warn"], "err": T["danger"], "info": T["accent"]}[kind])
+        if detail:
+            if not details_link.winfo_ismapped():
+                details_link.pack(side="left", padx=(10, 0))
+        elif details_link.winfo_ismapped():
+            details_link.pack_forget()
     BUSY = {"n": 0, "job": None, "k": 0}
     def _spin_tick():
         if not BUSY["n"]: BUSY["job"] = None; return
@@ -5229,7 +5276,7 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
                 if msg and status.get() == msg: status.set(prev[0]); dot.configure(fg=prev[1])    # put the old line back
                 if err is not None:
                     if fail: fail(err)
-                    else: set_status("Something went wrong: %s" % (str(err)[:160] or err.__class__.__name__), "err")
+                    else: set_status(status_sentence(err), "err", detail=str(err)[:800] or err.__class__.__name__)
                 elif done: done(res)
             try: root.after(0, fin)
             except (RuntimeError, tk.TclError): pass          # window already closed
@@ -5403,6 +5450,8 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         st["mods"] = found
         text = " ".join(graphics_mod_warnings(found))
         mod_var.set(text)
+        if st.get("refresh_home"):
+            st["refresh_home"]()
         if text:
             if not mod_lbl.winfo_ismapped():
                 mod_lbl.grid(row=5, column=0, sticky="w", pady=(6, 0))
@@ -6547,6 +6596,8 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         if found: choose_detected_config(found)
         else:
             set_status("No settings file yet. Next: start the sim once, quit it, then click Find file. Or use Browse.", "warn")
+            if "--smoke" in sys.argv:
+                return
             messagebox.showinfo(APP_NAME, "SkyTune couldn't find a UserCfg.opt for MSFS 2020 or 2024.\n\n"
                                 "Next: start the simulator, reach the main menu, and quit. Then click Find file.\n"
                                 "If the sim is installed in a custom folder, click Browse and pick UserCfg.opt.")
@@ -7202,6 +7253,13 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         except tk.TclError: return
         build_cleaner(clean_tab); st["cleaner_built"] = True
     def first_launch():
+        try:
+            _first_launch()
+        except Exception as exc:
+            import traceback
+            log_ui_error(exc)
+            set_status(status_sentence(exc), "err", detail=traceback.format_exc()[-800:])
+    def _first_launch():
         autodetect()
         if st["cfg"]: on_choice()                      # remembered (or default) edge smoothing / extra frames
         if st["cfg"] and tr_all.get() != "SkyTune decides": on_traffic()
@@ -7212,7 +7270,8 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         elif start_view == "advanced":
             st["show_nav"]("Tools")
         else:
-            st["show_nav"]("Home")
+            saved_page = load_state().get("last_page")
+            st["show_nav"](saved_page if saved_page in NAV_PAGES else "Home")
         if st.get("refresh_header"): st["refresh_header"]()
         root.after(500, lambda: st.get("check_listing") and st["check_listing"]())
         try: first = not load_state().get("first_launch_done")
@@ -7244,6 +7303,15 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         if "--scroll" in sys.argv: root.after(1500, lambda: _scv.yview_moveto(float(sys.argv[sys.argv.index("--scroll") + 1])))
         if "--profiles" in sys.argv: root.after(800, profiles_dialog)
         if "--backups" in sys.argv: root.after(800, backups_dialog)
+        if "--shot" in sys.argv:
+            def _geo():
+                try:
+                    open("/tmp/page-geo.txt","w").write("%s home %sx%s content %sx%s kids %s\n" % (
+                        st.get("nav"), home_f.winfo_width(), home_f.winfo_height(),
+                        content.winfo_width(), content.winfo_height(), len(home_f.winfo_children())))
+                except Exception as exc:
+                    open("/tmp/page-geo.txt","w").write("err %s\n" % exc)
+            root.after(200, _geo)
 
     def all_widgets(top):
         out, todo = [], [top]
@@ -7278,15 +7346,28 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     root.bind("<Configure>", _on_root_cfg, add="+")
 
     shell = ttk.Frame(root); shell.pack(fill="both", expand=True)
-    sidebar = tk.Frame(shell, bg=T["card"])
-    content = ttk.Frame(shell); content.pack(side="left", fill="both", expand=True)
+    sidebar = tk.Frame(shell, bg=T["card"], width=228)
+    sidebar.pack(side="left", fill="y")
+    sidebar.pack_propagate(False)
+    content = tk.Frame(shell, bg=T["bg"]); content.pack(side="left", fill="both", expand=True)
     nav_buttons = {}
+    NAV_MARK = {"Home": "⌂", "Sims": "✈", "Optimise": "◆", "Tools": "⚙", "Troubleshooting": "!", "NVIDIA": "▣", "Updates": "↻", "Settings": "☰"}
     def paint_nav(name):
         for label, button in nav_buttons.items():
-            button.configure(bg=T["primary"] if label == name else T["card"], fg="#ffffff" if label == name else T["text"])
+            active = label == name
+            button.configure(text="  %s   %s" % (NAV_MARK.get(label, "•"), label),
+                             bg=T["primary"] if active else T["card"],
+                             fg="#ffffff" if active else T["text"],
+                             font=(F, 12, "bold") if active else (F, 12))
     def show_nav(name):
         if name not in NAV_PAGES:
             name = "Home"
+        try:
+            _show_nav(name)
+        except Exception as exc:
+            log_ui_error(exc)
+            set_status(status_sentence(exc), "err", detail=str(exc)[:800])
+    def _show_nav(name):
         st["nav"] = name
         for widget in (simple_outer, body, ban, home_f, sims_f, trouble_f, nvidia_f, updates_f, settings_f):
             try: widget.pack_forget()
@@ -7309,6 +7390,8 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
             ban.lift(); body.lift()
         elif name == "Home":
             home_f.pack(in_=content, fill="both", expand=True)
+            if st.get("refresh_home"):
+                st["refresh_home"]()
         elif name == "Sims":
             sims_f.pack(in_=content, fill="both", expand=True); refresh_sims()
         elif name == "Troubleshooting":
@@ -7333,25 +7416,92 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
             try: when = datetime.datetime.fromtimestamp(float(snap["written_at"])).strftime("%Y-%m-%d %H:%M")
             except (TypeError, ValueError, OSError): when = "saved"
         head_meta.set("Sim: %s   ·   v%s   ·   Last apply: %s" % (edition, VERSION, when))
+        if st.get("refresh_home"):
+            st["refresh_home"]()
     st["refresh_header"] = refresh_header
 
     def page(parent, title, subtitle):
-        outer = ttk.Frame(parent, padding=(16, 12))
-        ttk.Label(outer, text=title, style="CardTitle.TLabel").pack(anchor="w")
-        autowrap(ttk.Label(outer, text=subtitle, style="Muted.Card.TLabel", wraplength=640, justify="left"), outer, 8).pack(anchor="w", pady=(2, 10))
+        outer = tk.Frame(parent, bg=T["bg"], padx=18, pady=16)
+        tk.Label(outer, text=title, bg=T["bg"], fg=T["text"], font=FONT_H1).pack(anchor="w")
+        tk.Label(outer, text=subtitle, bg=T["bg"], fg=T["muted"], font=FONT, justify="left", wraplength=760).pack(anchor="w", pady=(4, 14))
         return outer
-    home_f = page(content, "Home", "Check the PC, then read the list. Nothing is written until you confirm.")
-    home_row = ttk.Frame(home_f); home_row.pack(anchor="w")
-    for label in ("Optimise", "Sims", "Troubleshooting", "NVIDIA", "Settings"):
-        ttk.Button(home_row, text=label, style="Secondary.TButton", command=lambda n=label: show_nav(n)).pack(side="left", padx=(0, 8), pady=4)
-    ttk.Label(home_f, text="DLSS and frame generation in Optimise are saved in your settings. A saved value does not prove they are running.",
-              style="Muted.Card.TLabel", wraplength=640, justify="left").pack(anchor="w", pady=(8, 0))
+    home_f = page(content, "Home", "Start here. Nothing is written until you confirm.")
+    home_summary = tk.StringVar(value="Sim: not detected\nLast backup: none\nNo warnings.")
+    tk.Label(home_f, textvariable=home_summary, bg=T["card"], fg=T["text"], font=(F, 12), justify="left", anchor="w", padx=14, pady=12).pack(fill="x", pady=(0, 12))
+    def refresh_home():
+        edition = {"2020": "MSFS 2020", "2024": "MSFS 2024"}.get(st.get("edition") or "", "not detected")
+        backup = "none"
+        if st.get("path"):
+            newest = _newest_backup_file(st["path"])
+            if newest:
+                backup = os.path.basename(newest)
+        warning = (mod_var.get() or "").strip() or ("No settings file loaded yet." if not st.get("cfg") else "No warnings.")
+        home_summary.set("Sim: %s\nLast backup: %s\n%s" % (edition, backup, warning))
+        try:
+            review_btn.configure(state="normal" if st.get("cfg") else "disabled")
+        except NameError:
+            pass
+    st["refresh_home"] = refresh_home
+    steps = tk.Frame(home_f, bg=T["bg"]); steps.pack(fill="x", pady=(0, 8))
+    tk.Label(steps, text="Start here", bg=T["bg"], fg=T["text"], font=FONT_H1).pack(anchor="w", pady=(0, 8))
+    def home_step(parent, number, title, line, command, tip):
+        tile = tk.Frame(parent, bg=T["card"], highlightthickness=1, highlightbackground=T["line"], padx=14, pady=12)
+        tile.pack(fill="x", pady=(0, 8))
+        tk.Label(tile, text="%s  %s" % (number, title), bg=T["card"], fg=T["text"], font=FONT_T).pack(anchor="w")
+        tk.Label(tile, text=line, bg=T["card"], fg=T["muted"], font=FONT, justify="left", wraplength=720).pack(anchor="w", pady=(4, 8))
+        button = tk.Button(tile, text=title, command=command, bd=0, padx=12, pady=8, bg=T["primary"], fg="#ffffff",
+                           activebackground=T["primary_hi"], activeforeground="#ffffff", font=FONT_B, cursor="hand2")
+        button.pack(anchor="w")
+        Tip(button, tip); Tip(tile, tip)
+        return button
+    home_step(steps, "1", "Check my PC", "SkyTune reads the graphics card, processor, memory and screen. Nothing is written.",
+              lambda: show_nav("Optimise"), "Opens Optimise so you can run Check my PC.")
+    goal_row = tk.Frame(steps, bg=T["bg"]); goal_row.pack(fill="x", pady=(0, 8))
+    tk.Label(goal_row, text="2  Pick a goal", bg=T["bg"], fg=T["text"], font=FONT_T).pack(anchor="w")
+    tk.Label(goal_row, text="Smoother, Balanced, or Best looks. This only changes the list SkyTune will show you.",
+             bg=T["bg"], fg=T["muted"], font=FONT).pack(anchor="w", pady=(4, 6))
+    goal_buttons = tk.Frame(goal_row, bg=T["bg"]); goal_buttons.pack(anchor="w")
+    for plain, internal in (("Smoother", "Smooth & steady"), ("Balanced", "Balanced"), ("Best looks", "Best visuals")):
+        b = tk.Button(goal_buttons, text=plain, bd=0, padx=14, pady=8, bg=T["card2"], fg=T["text"], font=FONT_B, cursor="hand2",
+                      command=lambda g=internal: (goal_var.set(g), on_goal(), show_nav("Optimise")))
+        b.pack(side="left", padx=(0, 8))
+        Tip(b, GOAL_BLURB[internal])
+    review_btn = home_step(steps, "3", "Review and apply", "Read the list, then confirm. Undo puts the last backup back. Nothing is written until you click Yes, write.",
+                           lambda: show_nav("Optimise"), "Opens the list. Yes, write is still required.")
+    places = tk.Frame(home_f, bg=T["bg"]); places.pack(fill="x", pady=(8, 0))
+    tk.Label(places, text="Pages", bg=T["bg"], fg=T["text"], font=FONT_T).pack(anchor="w", pady=(0, 8))
+    grid = tk.Frame(places, bg=T["bg"]); grid.pack(fill="x")
+    home_cards = (
+        ("Optimise", "Check the PC, pick a goal, then review the list."),
+        ("Sims", "See MSFS 2020 and 2024 and the Community folder. Nothing there is changed."),
+        ("Troubleshooting", "Save a support pack, read mod warnings, and check the PC."),
+        ("NVIDIA", "Read the driver, and save only the two simulator profiles."),
+        ("Updates", "Check official pages when you click. Nothing is downloaded for you."),
+    )
+    for index, (label, line) in enumerate(home_cards):
+        tile = tk.Frame(grid, bg=T["card"], highlightthickness=1, highlightbackground=T["line"], padx=14, pady=12, cursor="hand2")
+        tile.grid(row=index // 2, column=index % 2, sticky="nsew", padx=(0, 8), pady=(0, 8))
+        tk.Label(tile, text=label, bg=T["card"], fg=T["text"], font=FONT_T).pack(anchor="w")
+        tk.Label(tile, text=line, bg=T["card"], fg=T["muted"], font=FONT, justify="left", wraplength=340).pack(anchor="w", pady=(4, 0))
+        tile.bind("<Button-1>", lambda e, n=label: show_nav(n))
+        for child in tile.winfo_children():
+            child.bind("<Button-1>", lambda e, n=label: show_nav(n))
+        Tip(tile, line)
+    grid.columnconfigure(0, weight=1); grid.columnconfigure(1, weight=1)
+    refresh_home()
 
     sims_f = page(content, "Sims", "MSFS 2020 and 2024 from Steam, the Microsoft Store, and a Community folder named in the settings file.")
     sims_box = tk.Label(sims_f, bg=T["card"], fg=T["text"], font=FONT, wraplength=640, justify="left", anchor="nw")
     sims_box.pack(fill="x")
     sim_pick = tk.StringVar(value="")
     def refresh_sims():
+        try:
+            _refresh_sims()
+        except Exception as exc:
+            log_ui_error(exc)
+            sims_box.configure(text="The sim list could not be read. Nothing was changed.")
+            set_status(status_sentence(exc), "err", detail=str(exc)[:800])
+    def _refresh_sims():
         found = describe_installs(detect_usercfgs())
         st["installs"] = found
         lines = []
@@ -7689,22 +7839,16 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
             mod_note.set(result.get("error") or ("Installed %s. %s" % (spec["name"], spec["credit"])))
         run_bg(work, done, "Downloading the author's release…")
 
-    def place_sidebar(_=None):
-        sidebar.pack_forget(); content.pack_forget()
-        sidebar.pack(side="left", fill="y"); content.pack(side="left", fill="both", expand=True)
-        page = st.get("nav")
-        if page == "Optimise":
-            simple_outer.lift(); footer.lift()
-        elif page == "Tools":
-            ban.lift(); body.lift()
+    tk.Label(sidebar, text="SkyTune", bg=T["card"], fg=T["text"], font=FONT_H1).pack(anchor="w", padx=16, pady=(18, 0))
+    tk.Label(sidebar, text="MSFS 2020/2024", bg=T["card"], fg=T["muted"], font=FONT_S).pack(anchor="w", padx=16, pady=(0, 14))
     for name in NAV_PAGES:
-        button = tk.Button(sidebar, text=name, command=lambda n=name: show_nav(n), bd=0, padx=0, pady=8,
+        button = tk.Button(sidebar, text=name, command=lambda n=name: show_nav(n), bd=0, padx=16, pady=12,
                            bg=T["card"], fg=T["text"], activebackground=T["primary"], activeforeground="#ffffff",
-                           font=FONT_B, anchor="w", cursor="hand2")
-        button.pack(fill="x")
+                           font=(F, 12), anchor="w", cursor="hand2")
+        button.pack(fill="x", pady=1)
+        Tip(button, "Open %s. Alt+%d" % (name, NAV_PAGES.index(name) + 1))
         nav_buttons[name] = button
-    place_sidebar()
-    root.bind("<Configure>", lambda _e: place_sidebar(), add="+")
+        root.bind("<Alt-Key-%d>" % (NAV_PAGES.index(name) + 1), lambda e, n=name: show_nav(n))
     paint_nav("Home")
     overlay_win = {"widget": None}
     def toggle_overlay(_event=None):
@@ -7746,6 +7890,34 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
             widget.pack_forget()
         except tk.TclError:
             pass
+    def _remember_window():
+        if "--layout-check" in sys.argv or "--smoke" in sys.argv:
+            return
+        try:
+            save_state({"window_geometry": root.geometry(), "last_page": st.get("nav") or "Home"})
+        except Exception:
+            pass
+    def _close():
+        _remember_window()
+        root.destroy()
+    root.protocol("WM_DELETE_WINDOW", _close)
+    if "--smoke" in sys.argv:
+        def _smoke():
+            errors = list(frozen_import_check())
+            for name in NAV_PAGES:
+                try:
+                    st["show_nav"](name)
+                    root.update_idletasks(); root.update()
+                except Exception as exc:
+                    errors.append("%s: %s" % (name, exc))
+                    log_ui_error(exc)
+            try:
+                with open(os.path.join(os.getcwd(), "skytune-smoke.txt"), "w", encoding="utf-8") as handle:
+                    handle.write("OK\n" if not errors else "\n".join(errors) + "\n")
+            except OSError:
+                pass
+            os._exit(1 if errors else 0)
+        root.after(300, _smoke)
     root.after(100, first_launch)
     if os.environ.get("SKYTUNE_PROBE"):           # developer start-up timing hook (perf measurements only)
         root.after(100, lambda: root.after_idle(lambda: open(os.environ["SKYTUNE_PROBE"], "w").write(str(time.time()))))

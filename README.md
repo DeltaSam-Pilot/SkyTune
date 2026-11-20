@@ -1,4 +1,4 @@
-# SkyTune 1.8.1
+# SkyTune 1.8.2
 
 SkyTune is a free, offline graphics tuner for Microsoft Flight Simulator 2020 and 2024 on PC. It reads your computer, shows every setting it would change, and asks before it writes. Every write keeps a backup.
 
@@ -6,7 +6,7 @@ Download the app from the official Flightsim.to page: [SkyTune on flightsim.to](
 
 It does not run on Xbox. Linux and Steam Deck are experimental, through Proton or Python.
 
-![SkyTune 1.8.1](screenshots/30-free-main.png)
+![SkyTune 1.8.2](screenshots/30-free-main.png)
 
 ## Features
 

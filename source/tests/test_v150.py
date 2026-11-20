@@ -47,7 +47,7 @@ class Diagnostic(unittest.TestCase):
             "hardware": {"gpu": "NVIDIA GeForce RTX 3070 Ti", "vram_gb": 8, "errors": ["/home/sam/steam missing"]},
             "profile_names": ["Busy airports"], "goal": "Balanced", "aa": "TAA", "fg": "Off", "traffic": "SkyTune decides",
             "backup_count": 1, "known_settings": 40, "sim_running": False})
-        self.assertIn("1.8.1", text)
+        self.assertIn("1.8.2", text)
         self.assertIn(r"C:\Users\<user>\AppData", text)
         self.assertNotIn(r"Users\Sam", text)
         self.assertIn("/home/<user>/steam", text)

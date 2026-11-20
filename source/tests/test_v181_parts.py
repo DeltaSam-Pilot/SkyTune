@@ -2,6 +2,13 @@
 import os, shutil, tempfile, unittest, zipfile
 import msfs_tweaker as m
 
+class FrozenImports(unittest.TestCase):
+    def test_required_stdlib_imports_and_plain_status(self):
+        self.assertEqual(m.frozen_import_check(), [])
+        sentence = m.status_sentence(ModuleNotFoundError("email"))
+        self.assertIn("did not load", sentence)
+        self.assertNotIn("Traceback", sentence)
+
 class SupportLogs(unittest.TestCase):
     def test_optiscaler_and_reshade_logs_are_masked_and_optional(self):
         folder = tempfile.mkdtemp()

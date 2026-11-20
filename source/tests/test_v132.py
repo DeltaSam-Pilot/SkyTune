@@ -115,7 +115,7 @@ class AppIcon(unittest.TestCase):
 
 class Version(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(m.VERSION, "1.8.1")
+        self.assertEqual(m.VERSION, "1.8.2")
         root = os.path.dirname(os.path.dirname(HERE))
         if not os.path.isfile(os.path.join(root, "CHANGELOG.md")): root = os.path.dirname(HERE)
         with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8") as f:
