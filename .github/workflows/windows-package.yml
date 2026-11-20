@@ -1,0 +1,79 @@
+# Builds the Flightsim.to zip and uploads it as an Actions artifact.
+# It does not publish a GitHub release and it does not create a tag.
+# Push is limited to this branch because GitHub only accepts workflow_dispatch
+# after the workflow file is on the default branch.
+name: Windows package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/support-pack-mods-2db2
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller
+      - name: Build SkyTune.exe
+        working-directory: source
+        run: python -m PyInstaller --onefile --windowed --name SkyTune --icon assets\app.ico --version-file assets\version_info.txt --add-data "assets\app.ico;." --add-data "assets\app.png;assets" --hidden-import email --hidden-import email.parser --hidden-import http.client --hidden-import urllib.request --hidden-import ssl --hidden-import json --hidden-import zipfile --hidden-import ctypes --hidden-import hashlib --exclude-module html --exclude-module xml --exclude-module unittest --exclude-module pydoc --exclude-module pydoc_data --exclude-module doctest --exclude-module pdb --exclude-module xmlrpc --exclude-module sqlite3 --exclude-module lib2to3 --exclude-module tkinter.tix --exclude-module tkinter.test --exclude-module test --exclude-module distutils --exclude-module setuptools --exclude-module pip --exclude-module asyncio --exclude-module decimal --exclude-module _decimal --exclude-module _pydecimal --exclude-module fractions --exclude-module statistics --exclude-module lzma --exclude-module _lzma --exclude-module bz2 --exclude-module _bz2 --noconfirm msfs_tweaker.py
+      - name: Smoke-test the frozen app
+        working-directory: source
+        shell: pwsh
+        run: |
+          .\dist\SkyTune.exe --smoke --detect-quiet
+          if ($LASTEXITCODE -ne 0) {
+            if (Test-Path skytune-smoke.txt) { Get-Content skytune-smoke.txt }
+            throw "The frozen app failed its smoke test."
+          }
+          $text = Get-Content skytune-smoke.txt -Raw
+          if ($text -notmatch '(?m)^OK\s*$') { Write-Output $text; throw "Smoke test did not report OK." }
+      - name: Build the per-user installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "source\SkyTune.iss"
+      - name: Pack the Flightsim.to zip
+        shell: python
+        run: |
+          import os, zipfile
+          root = os.getcwd()
+          exe = os.path.join(root, "source", "dist", "SkyTune.exe")
+          if not os.path.isfile(exe):
+              raise SystemExit("SkyTune.exe was not built")
+          dest = os.path.join(root, "SkyTune-1.8.2-flightsim.to.zip")
+          skip_dirs = {"dist", "build", "__pycache__", ".git"}
+          with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+              for name in ("README.md", "CHANGELOG.md", "DETAILS.md"):
+                  zf.write(name, name)
+              zf.write(exe, "SkyTune.exe")
+              for folder in ("screenshots", "source"):
+                  for dirpath, dirnames, filenames in os.walk(folder):
+                      dirnames[:] = [d for d in dirnames if d not in skip_dirs and d != "installer-out"]
+                      for filename in filenames:
+                          if filename.endswith((".pyc", ".pyo", ".spec")):
+                              continue
+                          path = os.path.join(dirpath, filename)
+                          arc = path.replace("\\", "/")
+                          zf.write(path, arc)
+          print(dest, os.path.getsize(dest))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyTune-1.8.2-flightsim.to
+          path: SkyTune-1.8.2-flightsim.to.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyTune-1.8.2-setup
+          path: source/installer-out/SkyTune-1.8.2-setup.exe
+          if-no-files-found: error

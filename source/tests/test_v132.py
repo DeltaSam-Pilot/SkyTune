@@ -115,7 +115,7 @@ class AppIcon(unittest.TestCase):
 
 class Version(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(m.VERSION, "1.8.0")
+        self.assertEqual(m.VERSION, "1.8.2")
         root = os.path.dirname(os.path.dirname(HERE))
         if not os.path.isfile(os.path.join(root, "CHANGELOG.md")): root = os.path.dirname(HERE)
         with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8") as f:
@@ -139,7 +139,7 @@ class GUI(_GUI):
                     import traceback; errs.append(traceback.format_exc()); root.destroy(); return
                 root.after(700, lambda: go(i + 1))
             root.after(1500, go); return root
-        tk.Tk = mk; old = sys.argv; sys.argv = ["msfs_tweaker.py"] + list(argv)
+        tk.Tk = mk; old = sys.argv; sys.argv = ["msfs_tweaker.py", "--nav", "Optimise"] + list(argv)
         try: m.run_gui(demo_hw=False)
         finally: tk.Tk = orig; sys.argv = old; m.detect_hardware = saved
         if errs: self.fail(errs[0])

@@ -21,7 +21,7 @@ def tree():
 
 def wait_main():
     for _ in range(24):
-        if "1.8.0" in tree():
+        if "1.8.2" in tree():
             return True
         time.sleep(0.25)
     return False
@@ -158,7 +158,7 @@ def main():
         if len(notes) != 1:
             raise SystemExit("review missing %s" % notes)
         doc = json.loads(notes[0].read_text())
-        if doc.get("app_version") != "1.8.0" or not doc.get("verified") or not doc.get("changes"):
+        if doc.get("app_version") != "1.8.2" or not doc.get("verified") or not doc.get("changes"):
             raise SystemExit("bad review %s" % doc)
         if "sk-" in notes[0].read_text():
             raise SystemExit("review leaked a key")

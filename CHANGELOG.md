@@ -1,5 +1,27 @@
 # Changelog – SkyTune for MSFS 2020/2024
 
+## v1.8.2 – 2026-11-20
+Fixed a start-up error: No module named email.
+
+## v1.8.1 – 2026-11-20
+A small update on top of 1.8.0. The window has a sidebar, and settings are still written only after you confirm.
+
+- **Home.** A status line shows the sim SkyTune found, the SkyTune version, and the last apply. Cards open Optimise, Sims, Tools, Troubleshooting and Settings. Optimise and Tools stay visible beside the sidebar.
+- **Sims.** MSFS 2020 and 2024 are listed for Steam, the Microsoft Store, and a custom Community folder when that path is in the settings file.
+- **Sims.** Each detected install lists the Community packages by the names on disk. SkyTune only reads that folder.
+- **Optional mods.** On the Sims page you can install, repair or remove AtmosphereMod by tomwhoca and the Glass Cockpit DLSS fix add-on by IFreemz. SkyTune downloads each author's latest official release only after you click, checks the size and checksum, and links the licence. It remembers the files it copied and backs up anything it replaces. Uninstall puts those files back. Other Community packages are left as they are. A clash warning still appears when AtmosphereMod is already installed.
+- **OptiScaler.** The Sims page can install the official release. A zip is unpacked by SkyTune. A 7z archive is unpacked with 7-Zip when 7-Zip is already installed. Only the author's dll and ini files are copied, and OptiScaler.dll is saved as dxgi.dll next to the simulator.
+- **NVIDIA.** The page reads the driver when it can, and can save three documented profile values for FlightSimulator.exe and FlightSimulator2024.exe only, after you confirm. It stores a backup first. Restore puts that backup back, or removes a profile this save created. A profile that also names another program is left alone. Other cards are left alone. If the driver interface is missing, nothing is written.
+- **Looks and overlay.** Natural, Vivid and Cinematic are preset files only. The official ReShade setup is downloaded from reshade.me only after you confirm, then started. SkyTune does not include ReShade and does not copy its files into the simulator itself. F8 opens a small always-on-top window. It shows a PresentMon sample when PresentMon is installed, and "FPS not read" when it is not. It does not inject anything.
+- **Updates.** Check official pages reads the version on each author's page. It does not download or install anything. Open still goes to that page.
+- **Troubleshooting.** The support pack, the graphics-mod warning and the PC check are on one page.
+- **Updates.** Once a day, if you leave it on, SkyTune reads the version on its Flightsim.to page. A newer version shows a notice with a button that opens that page. Nothing is downloaded or installed for you. Turn it off under Settings.
+- **Support pack and saved settings.** The pack lists its files before saving and hides account names. DLSS and frame generation are labelled "saved in your settings".
+
+SkyTune.exe is unsigned. Download it only from the official Flightsim.to page. Changing settings is at your own risk: SkyTune backs up your file before every write, and you should keep a copy of your own as well. Results depend on your hardware, so frame rates are not guaranteed. SkyTune is a free, independent community project, not affiliated with or endorsed by Microsoft or Asobo Studio.
+
+SkyTune.exe is unsigned. Download it only from the official Flightsim.to page. Changing settings is at your own risk: SkyTune backs up your file before every write, and you should keep a copy of your own as well. Results depend on your hardware, so frame rates are not guaranteed. SkyTune is a free, independent community project, not affiliated with or endorsed by Microsoft or Asobo Studio.
+
 ## v1.8.0 – 2026-11-14 (quality)
 A quality pass on the same tools. The window starts with three steps, Help explains the common questions, and each suggested change has a one-line reason from the graphics card, video memory, processor cores, and screen refresh when those could be read. Nothing is written until you click Yes, write.
 
