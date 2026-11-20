@@ -131,6 +131,22 @@ class LooksAndOverlay(unittest.TestCase):
         self.assertIn("saved in your settings", m.overlay_text(60, "Vivid"))
         self.assertEqual(len(m.UPDATE_CATALOG), 5)
 
+class OptiArchive(unittest.TestCase):
+    def test_7z_keeps_only_dll_and_ini(self):
+        folder = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(folder, "OptiScaler.dll"), "wb") as handle:
+                handle.write(b"dll")
+            with open(os.path.join(folder, "notes.txt"), "wb") as handle:
+                handle.write(b"no")
+            result = m.optiscaler_archive_files(b"not-a-real-7z", "OptiScaler.7z", unpack=lambda _data: folder)
+            self.assertEqual(result["files"], {"OptiScaler.dll": b"dll"})
+            missing = m.optiscaler_archive_files(b"x", "OptiScaler.7z", unpack=lambda _data: None)
+            self.assertFalse(missing["ok"])
+            self.assertEqual(missing["files"], {})
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
 class OptiRecord(unittest.TestCase):
     def test_install_record_and_uninstall(self):
         folder = tempfile.mkdtemp()

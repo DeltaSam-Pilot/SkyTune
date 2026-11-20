@@ -1842,6 +1842,55 @@ def install_atmosphere_payload(zip_bytes, exe_dir, community_dir, local_dir, rec
         placed.append(dest)
     return {"ok": True, "error": None, "files": placed}
 
+def _unpack_7z(data):
+    """Unpack with 7-Zip when it is already installed. SkyTune does not include 7-Zip."""
+    import shutil
+    import tempfile
+    exe = shutil.which("7z") or shutil.which("7za")
+    if not exe:
+        return None
+    folder = tempfile.mkdtemp(prefix="skytune-7z-")
+    archive = os.path.join(folder, "archive.7z")
+    out = os.path.join(folder, "out")
+    os.makedirs(out)
+    with open(archive, "wb") as handle:
+        handle.write(data)
+    try:
+        subprocess.run([exe, "x", "-y", "-o" + out, archive], check=True, timeout=120,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out
+
+def optiscaler_archive_files(data, name, unpack=None):
+    """dll and ini files from the author's zip or 7z. Other files are ignored."""
+    low = str(name or "").lower()
+    if low.endswith(".zip"):
+        import io
+        import zipfile
+        try:
+            archive = zipfile.ZipFile(io.BytesIO(data))
+        except zipfile.BadZipFile:
+            return {"ok": False, "error": "The author's download was not a complete zip. Nothing was installed.", "files": {}}
+        files = {}
+        for raw in archive.namelist():
+            safe = _safe_arc_name(raw)
+            if safe.lower().endswith((".dll", ".ini")):
+                files[os.path.basename(safe)] = archive.read(raw)
+        return {"ok": True, "error": None, "files": files}
+    if low.endswith(".7z"):
+        folder = unpack(data) if unpack else _unpack_7z(data)
+        if not folder:
+            return {"ok": False, "error": "SkyTune could not unpack the 7z archive. Nothing was installed.", "files": {}}
+        files = {}
+        for dirpath, _dirnames, filenames in os.walk(folder):
+            for filename in filenames:
+                if filename.lower().endswith((".dll", ".ini")):
+                    with open(os.path.join(dirpath, filename), "rb") as handle:
+                        files[filename] = handle.read()
+        return {"ok": True, "error": None, "files": files}
+    return {"ok": False, "error": "The author's release was checked, but SkyTune cannot use that file. Nothing was installed.", "files": {}}
+
 def install_optiscaler_files(files, exe_dir, record, version):
     """Place the author's files next to the simulator. OptiScaler.dll is saved as dxgi.dll, the documented DX12 name.
 
@@ -7280,20 +7329,10 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
             elif spec["id"] == "atmosphere":
                 result = install_atmosphere_payload(data, exe_dir, community, local_dir, record, version)
             elif spec["id"] == "optiscaler":
-                name = str(asset.get("name") or "")
-                if not name.lower().endswith(".zip"):
-                    return {"ok": False, "error": "The author's release was checked, but SkyTune does not unpack a 7z archive. Nothing was installed."}
-                import io, zipfile
-                try:
-                    archive = zipfile.ZipFile(io.BytesIO(data))
-                except zipfile.BadZipFile:
-                    return {"ok": False, "error": "The author's download was not a complete zip. Nothing was installed."}
-                files = {}
-                for raw in archive.namelist():
-                    safe = _safe_arc_name(raw)
-                    if safe.lower().endswith((".dll", ".ini")):
-                        files[safe] = archive.read(raw)
-                result = install_optiscaler_files(files, exe_dir, record, version)
+                unpacked = optiscaler_archive_files(data, asset.get("name") or "")
+                if not unpacked["ok"]:
+                    return unpacked
+                result = install_optiscaler_files(unpacked["files"], exe_dir, record, version)
             else:
                 return {"ok": False, "error": "SkyTune does not install that mod."}
             if result.get("ok"):
