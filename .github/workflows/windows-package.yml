@@ -43,7 +43,7 @@ jobs:
               zf.write(exe, "SkyTune.exe")
               for folder in ("screenshots", "source"):
                   for dirpath, dirnames, filenames in os.walk(folder):
-                      dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+                      dirnames[:] = [d for d in dirnames if d not in skip_dirs and d != "installer-out"]
                       for filename in filenames:
                           if filename.endswith((".pyc", ".pyo", ".spec")):
                               continue
@@ -55,4 +55,9 @@ jobs:
         with:
           name: SkyTune-1.8.1-flightsim.to
           path: SkyTune-1.8.1-flightsim.to.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyTune-1.8.1-setup
+          path: source/installer-out/SkyTune-1.8.1-setup.exe
           if-no-files-found: error
