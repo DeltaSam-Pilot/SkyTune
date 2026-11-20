@@ -17,6 +17,8 @@ It does not run on Xbox. Linux and Steam Deck are experimental, through Proton o
 - Creator setups for MSFS 2024 based on settings shown in EasyjetSimPilot's video. The creator has not endorsed SkyTune. https://youtu.be/Mq63dyne32g
 - Frame Hold, inspired by tools like AutoFPS. It works out terrain and object detail for a frame-rate target, with a minimum and maximum, and an optional altitude rule (less detail near the ground, more in cruise). MSFS does not publish a way to change those values during a flight, so Frame Hold does not write into the simulator's memory and does not change the sim while it is running. Close the sim and use Yes, write if you want the numbers saved.
 - Help inside the app, and an offline assistant. Optional AI uses your own key and is off by default.
+- Support pack: a zip of SkyTune's log, the PC check, and the latest before/after settings. You see the file list before it is saved, and account names are hidden.
+- A read-only note when ReShade, OptiScaler, the MSFS 2024 glass-cockpit DLSS fix, or AtmosphereMod is installed and could override a saved setting. DLSS and frame generation are labelled as saved in your settings.
 
 ![Help](screenshots/32-help.png)
 

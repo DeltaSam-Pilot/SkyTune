@@ -1278,6 +1278,269 @@ def build_diagnostic(info):
         raise ValueError("Diagnostic refused to include a key.")
     return text
 
+def mask_personal(text):
+    """Hide account names, mail addresses and tokens. Leaves the rest of a note readable."""
+    s = redact_user_text(str(text or ""))
+    s = re.sub(r"(?i)([A-Za-z]:\\Users\\)[^\\/\r\n]+", r"\1<user>", s)
+    s = re.sub(r"(?i)([\\/]Users[\\/])[^\\/\r\n]+", r"\1<user>", s)
+    s = re.sub(r"(?i)(/home/)[^/\s]+", r"\1<user>", s)
+    s = re.sub(r"(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b", "<email>", s)
+    s = re.sub(r"sk-[A-Za-z0-9_\-]{8,}", "<token>", s)
+    s = re.sub(r"(?i)((?:api[_-]?key|token|bearer)\s*[:=]\s*)\S+", r"\1<token>", s)
+    return s
+
+def _read_text_file(path):
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return ""
+    if data.startswith(b"\xff\xfe") or data.startswith(b"\xfe\xff"):
+        return data.decode("utf-16", "replace")
+    return data.decode("utf-8", "replace")
+
+def support_pack_start_dir(env=None):
+    """Desktop when that folder exists, otherwise Documents, otherwise the home folder."""
+    env = os.environ if env is None else env
+    home = env.get("USERPROFILE") or env.get("HOME") or os.path.expanduser("~")
+    for name in ("Desktop", "Documents"):
+        path = os.path.join(home, name)
+        if os.path.isdir(path):
+            return path
+    return home
+
+def _hardware_note(hw, health=None):
+    hw = hw or {}
+    lines = ["SkyTune PC check", "version: %s" % VERSION, ""]
+    lines.append("graphics: %s" % (hw.get("gpu") or "not checked"))
+    lines.append("video_memory_gb: %s" % (hw.get("vram_gb") if hw.get("vram_gb") else "not checked"))
+    lines.append("processor: %s" % (hw.get("cpu") or "not checked"))
+    lines.append("cores: %s" % (hw.get("cores") or "not checked"))
+    lines.append("memory_gb: %s" % (hw.get("ram_gb") if hw.get("ram_gb") else "not checked"))
+    if hw.get("width"):
+        lines.append("screen: %s x %s" % (hw.get("width"), hw.get("height") or ""))
+    errs = [mask_personal(e) for e in (hw.get("errors") or [])][:6]
+    if errs:
+        lines.append("detection_notes:")
+        lines += ["- %s" % e for e in errs]
+    health = health or {}
+    if health:
+        lines += ["", "pc_health (read only):",
+                  "  free_gb: %s" % health.get("free_gb", "Unknown"),
+                  "  pagefile: %s" % health.get("pagefile", "Unknown"),
+                  "  hags: %s" % health.get("hags", "Unknown"),
+                  "  memory_integrity: %s" % health.get("memory_integrity", "Unknown"),
+                  "  refresh_hz: %s" % health.get("refresh_hz", "Unknown")]
+    lines += ["", "This is the check SkyTune already stored. It does not change the PC."]
+    return "\n".join(lines) + "\n"
+
+def _cfg_text(path):
+    try:
+        return UserCfg.load(path).text()
+    except Exception:
+        return _read_text_file(path)
+
+def _newest_backup_file(cfg_path):
+    folder = os.path.join(os.path.dirname(cfg_path), "UserCfg_backups")
+    if not os.path.isdir(folder):
+        return ""
+    try:
+        names = [n for n in os.listdir(folder) if n.startswith("UserCfg_") and n.endswith(".opt")]
+    except OSError:
+        return ""
+    if not names:
+        return ""
+    return os.path.join(folder, sorted(names)[-1])
+
+def build_support_pack(cfg_path=None, edition=None, hw=None, health=None, state_path=None, now=None):
+    """The files a support pack would contain. Reads SkyTune's own notes and the sim settings file. Writes nothing."""
+    now = now or datetime.datetime.now()
+    edition = edition if edition in ("2020", "2024") else "unknown"
+    sim = {"2020": "MSFS 2020", "2024": "MSFS 2024"}.get(edition, "MSFS (not detected)")
+    readme = (
+        "SkyTune support pack\n"
+        "version: %s\n"
+        "sim: %s\n"
+        "date: %s\n\n"
+        "Account names in paths are written as <user>.\n"
+        "This file stays on your PC. SkyTune does not upload it.\n"
+    ) % (VERSION, sim, now.strftime("%Y-%m-%d"))
+    files = [{"name": "README.txt", "text": readme},
+             {"name": "hardware.txt", "text": mask_personal(_hardware_note(hw, health))}]
+    if cfg_path and os.path.isfile(os.path.join(os.path.dirname(cfg_path), "UserCfg_backups", "SkyTune_log.txt")):
+        log_path = os.path.join(os.path.dirname(cfg_path), "UserCfg_backups", "SkyTune_log.txt")
+        files.append({"name": "SkyTune_log.txt", "text": mask_personal(_read_text_file(log_path))})
+    snap = load_last_apply(state_path)
+    if snap:
+        files.append({"name": "last-apply.json", "text": mask_personal(json.dumps(snap, indent=1, sort_keys=True) + "\n")})
+    if cfg_path and os.path.isfile(cfg_path):
+        backup = _newest_backup_file(cfg_path)
+        if backup:
+            review = read_change_review(backup)
+            if review:
+                files.append({"name": "before-review.json",
+                              "text": mask_personal(json.dumps(review, indent=1, sort_keys=True) + "\n")})
+            before = _cfg_text(backup)
+            if before:
+                files.append({"name": "before-UserCfg.opt", "text": mask_personal(before)})
+        current = _cfg_text(cfg_path)
+        if current:
+            files.append({"name": "UserCfg.opt", "text": mask_personal(current)})
+    clean = []
+    for item in files:
+        text = mask_personal(item["text"])
+        if re.search(r"sk-[A-Za-z0-9]{8,}", text):
+            continue
+        clean.append({"name": item["name"], "text": text})
+    return clean
+
+def support_pack_names(entries):
+    """Archive names, in order, with no folders and no account paths."""
+    names = []
+    for item in entries or []:
+        name = str(item.get("name") or "")
+        if name and name == os.path.basename(name) and name not in names:
+            names.append(name)
+    return names
+
+def write_support_pack(dest, entries):
+    """Write the reviewed list into a zip. Names are the archive names only."""
+    import zipfile
+    kept = []
+    for item in entries or []:
+        name = str(item.get("name") or "")
+        if not name or name != os.path.basename(name) or name in {n for n, _t in kept}:
+            continue
+        text = item.get("text")
+        if not isinstance(text, str):
+            continue
+        kept.append((name, mask_personal(text)))
+    if not kept:
+        raise OSError("There is nothing to put in the support pack.")
+    folder = os.path.dirname(os.path.abspath(dest)) or "."
+    if not os.path.isdir(folder):
+        raise OSError("That folder isn't there.")
+    with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, text in kept:
+            zf.writestr(name, text.encode("utf-8"))
+    return [name for name, _text in kept]
+
+# ---------------------------------------------------------------- other graphics mods (read only)
+# SkyTune only looks for known filenames. It does not open, rename or delete those mods.
+RESHADE_WARNING = (
+    "ReShade is installed next to the simulator. It can draw over the picture, including DLSS, "
+    "so what you see may not match the settings SkyTune saves. SkyTune does not change ReShade.")
+OPTISCALER_WARNING = (
+    "OptiScaler is installed. It can replace DLSS or frame generation with a different upscaler, "
+    "so DLSS saved in your settings may not be what is running. SkyTune does not change OptiScaler.")
+GLASS_DLSS_WARNING = (
+    "The Glass Cockpit DLSS fix for MSFS 2024 is installed. It changes how DLSS draws cockpit screens. "
+    "The DLSS choice is only saved in your settings. SkyTune does not change that mod.")
+ATMOSPHERE_WARNING = (
+    "AtmosphereMod is installed. It changes sky, haze and cloud lighting while the simulator runs, "
+    "so those settings SkyTune saves may not be what you see. SkyTune does not change AtmosphereMod.")
+GRAPHICS_MODS = (
+    {"id": "reshade", "name": "ReShade", "files": ("ReShade.ini", "ReShade64.dll", "ReShade.log"), "warning": RESHADE_WARNING},
+    {"id": "optiscaler", "name": "OptiScaler", "files": ("OptiScaler.ini", "OptiScaler.dll", "OptiScaler.log"), "warning": OPTISCALER_WARNING},
+    {"id": "glass", "name": "Glass Cockpit DLSS fix",
+     "files": ("glass-cockpit-dlss-fix.addon64", "glass-cockpit-dlss-fix.ini", "glass-cockpit-dlss-fix.log",
+               "glass-cockpit-dlss-fix-status.txt"),
+     "warning": GLASS_DLSS_WARNING},
+    {"id": "atmosphere", "name": "AtmosphereMod", "files": ("AtmosphereMod.addon64",), "warning": ATMOSPHERE_WARNING},
+)
+SIM_EXE_NAMES = ("FlightSimulator.exe", "FlightSimulator2024.exe")
+
+def _dir_names(folder):
+    try:
+        return {n.lower(): n for n in os.listdir(folder)}
+    except OSError:
+        return {}
+
+def _named_file(folder, filenames):
+    have = _dir_names(folder)
+    for name in filenames:
+        found = have.get(name.lower())
+        if found and os.path.isfile(os.path.join(folder, found)):
+            return found
+    return ""
+
+def _sim_edition_in(folder):
+    have = _dir_names(folder)
+    if "flightsimulator2024.exe" in have:
+        return "2024"
+    if "flightsimulator.exe" in have:
+        return "2020"
+    return ""
+
+def sim_program_dirs(home=None, env=None):
+    """Folders that contain a simulator executable. Reads directory names only."""
+    env = os.environ if env is None else env
+    home = home or env.get("HOME") or os.path.expanduser("~")
+    found, seen = [], set()
+    def add(folder):
+        if not folder or not os.path.isdir(folder):
+            return
+        key = os.path.normcase(os.path.abspath(folder))
+        if key in seen or not _sim_edition_in(folder):
+            return
+        seen.add(key)
+        found.append(folder)
+    for lib in steam_libraries(home):
+        common = os.path.join(lib, "steamapps", "common")
+        for name in _dir_names(common).values():
+            add(os.path.join(common, name))
+    if os.name == "nt":
+        drive = env.get("SystemDrive") or "C:"
+        if not drive.endswith("\\"):
+            drive += "\\"
+        for parts in (("XboxGames", "Microsoft Flight Simulator 2024", "Content"),
+                      ("XboxGames", "Microsoft Flight Simulator", "Content")):
+            add(os.path.join(drive, *parts))
+    return found
+
+def find_graphics_mods(cfg=None, edition=None, program_dirs=None, community=None, env=None):
+    """Known graphics mods that can sit on top of a saved setting. Does not change any file."""
+    env = os.environ if env is None else env
+    if program_dirs is None:
+        program_dirs = sim_program_dirs(env=env)
+    if community is None and cfg is not None:
+        community = community_path(cfg)
+    edition = edition if edition in ("2020", "2024", "unknown") else "unknown"
+    found, seen = [], set()
+    def add(spec, filename):
+        if spec["id"] in seen:
+            return
+        seen.add(spec["id"])
+        found.append({"id": spec["id"], "name": spec["name"], "file": filename, "warning": spec["warning"]})
+    for folder in program_dirs or []:
+        folder_edition = _sim_edition_in(folder)
+        if edition in ("2020", "2024") and folder_edition and folder_edition != edition:
+            continue
+        for spec in GRAPHICS_MODS:
+            if spec["id"] == "glass" and (edition == "2020" or folder_edition == "2020"):
+                continue
+            hit = _named_file(folder, spec["files"])
+            if hit:
+                add(spec, hit)
+    atmosphere = next(spec for spec in GRAPHICS_MODS if spec["id"] == "atmosphere")
+    local = env.get("LOCALAPPDATA")
+    if local and os.path.isfile(os.path.join(local, "AtmosphereMod", "tunables.ini")):
+        add(atmosphere, "tunables.ini")
+    if community and os.path.isdir(community):
+        for name in _dir_names(community).values():
+            if "atmospheremod" in name.lower() and os.path.isdir(os.path.join(community, name)):
+                add(atmosphere, name)
+                break
+    return found
+
+def graphics_mod_warnings(found):
+    lines = []
+    for item in found or []:
+        text = item.get("warning") or ""
+        if text and text not in lines:
+            lines.append(text)
+    return lines
+
 # ---------------------------------------------------------------- backups
 def backup_dir(cfg_path):
     d = os.path.join(os.path.dirname(cfg_path), "UserCfg_backups")
@@ -2514,6 +2777,53 @@ def in_file_label(path, raw, kind=None, spec=None):
         return "%d" % round(n) if kind == "int" or spec[2] >= 1 else "%.2f" % n
     return t
 
+SAVED_SETTING = "saved in your settings"
+
+def shows_saved_upscaler(path, raw=None):
+    """True when this row is DLSS or frame generation, and the value is not an explicit off."""
+    if path == "Video/AntiAliasing":
+        return str(raw or "").strip().upper() == "DLSS"
+    if path == "Video/DLSSMode":
+        return True
+    if path == "Video/FrameGeneration":
+        return str(raw or "").strip().upper() not in ("", "NONE", "OFF")
+    if path == "Video/DLSSG":
+        return str(raw or "").strip() in ("1", "1.0", "true", "True")
+    return False
+
+def saved_setting_suffix(path, raw=None):
+    return SAVED_SETTING if shows_saved_upscaler(path, raw) else ""
+
+def upscaler_saved_note(cfg):
+    """One sentence for the file's DLSS or frame-generation value. Empty when neither is saved on."""
+    if cfg is None:
+        return ""
+    parts = []
+    if shows_saved_upscaler("Video/AntiAliasing", cfg.get("Video/AntiAliasing")):
+        parts.append("DLSS")
+    if shows_saved_upscaler("Video/FrameGeneration", cfg.get("Video/FrameGeneration")) or shows_saved_upscaler("Video/DLSSG", cfg.get("Video/DLSSG")):
+        parts.append("frame generation")
+    if not parts:
+        return ""
+    verb = "is" if len(parts) == 1 else "are"
+    return "%s %s saved in your settings. A saved setting does not prove it is running." % (" and ".join(parts), verb)
+
+def choice_saved_note(aa, fg):
+    """The preferences line adds the same phrase when DLSS or frame generation is selected."""
+    aa_u, fg_u = (aa or "").upper(), (fg or "").upper()
+    if "DLSS" in aa_u or fg_u not in ("", "OFF", "NONE"):
+        return SAVED_SETTING
+    return ""
+
+FRAME_GEN_NOTE = (
+    "DLSS and frame generation shown here are saved in your settings. "
+    "A saved setting does not prove they are running. "
+    "Frame generation is best enabled after the base frame rate is stable (aim for at least 30 FPS). "
+    "VSync behaviour can change while frame generation is saved in your settings.\n\n"
+    "AMD FSR frame generation works on most GPUs (2x). "
+    "NVIDIA DLSS frame generation needs an RTX 40 or 50 card with hardware-accelerated GPU scheduling; "
+    "3x and 4x need an RTX 50-series card.")
+
 # v1.3.1: controls that only mean something while frame generation is on
 FG_DEPENDENT = ("Video/NBFramesToGenerate",)
 FG_MULT_LABELS = {"2x": 1, "3x": 2, "4x": 3}
@@ -2848,7 +3158,9 @@ def save_prefs(prefs, path=None):
 def prefs_summary(aa, fg, traffic):
     """One plain line for the collapsed 'My preferences' section."""
     tr = "SkyTune decides" if traffic == "SkyTune decides" else traffic
-    return "Smooth edges: %s  ·  Extra frames: %s  ·  Traffic: %s" % (aa, fg, tr)
+    line = "Smooth edges: %s  ·  Extra frames: %s  ·  Traffic: %s" % (aa, fg, tr)
+    note = choice_saved_note(aa, fg)
+    return line if not note else line + "  ·  " + note
 
 # ---------------------------------------------------------------- API key storage (AI mode, optional)
 def config_dir(env=None):
@@ -4204,6 +4516,21 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     autowrap(ttk.Label(ai2, textvariable=reco_var, style="Value.Card.TLabel", wraplength=int(300 * DPIF), justify="left"), ai2, 36).grid(row=3, column=0, sticky="w", pady=(10, 0))
     health_var = tk.StringVar(value="PC health: not read yet. This check does not change Windows.")
     autowrap(tk.Label(ai2, textvariable=health_var, bg=T["card"], fg=T["muted"], font=FONT_S, justify="left", anchor="w", wraplength=int(300 * DPIF)), ai2, 36).grid(row=4, column=0, sticky="w", pady=(6, 0))
+    mod_var = tk.StringVar(value="")
+    mod_lbl = autowrap(tk.Label(ai2, textvariable=mod_var, bg=T["card"], fg=T["warn"], font=FONT_S, justify="left", anchor="w", wraplength=int(300 * DPIF)), ai2, 36)
+    def refresh_mods():
+        try:
+            found = find_graphics_mods(st.get("cfg"), st.get("edition"))
+        except Exception:
+            found = []
+        st["mods"] = found
+        text = " ".join(graphics_mod_warnings(found))
+        mod_var.set(text)
+        if text:
+            if not mod_lbl.winfo_ismapped():
+                mod_lbl.grid(row=5, column=0, sticky="w", pady=(6, 0))
+        elif mod_lbl.winfo_ismapped():
+            mod_lbl.grid_remove()
     def refresh_health():
         probes = {}
         try: probes = windows_health_probes(8)
@@ -4699,11 +5026,12 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     fg_cb = ttk.Combobox(pbody, textvariable=fg_var, values=list(FG_CHOICES), state="readonly", width=18)
     fg_cb.grid(row=1, column=1, sticky="w", padx=12)
     AA_TIP = ("Smooth edges (also called anti-aliasing) removes jagged edges and can upscale the image.\nTAA: works on every graphics card and is a good starting point for clear cockpit text.\n"
-              "NVIDIA DLSS: RTX cards only. AMD FSR: broad GPU support; the active FSR version may depend on your GPU driver.\n"
+              "NVIDIA DLSS: RTX cards only, and it is saved in your settings. That does not prove DLSS is running. "
+              "AMD FSR: broad GPU support; the FSR version from the graphics driver may differ.\n"
               "For DLSS/FSR, choose Quality first and lower it only if you need more performance.")
     FG_TIP = ("Extra frames (also called frame generation) adds in-between frames for smoother motion, but does not improve input response. Start with Off until you confirm a stable base frame rate.\n"
               "AMD FSR frame generation: broad GPU support and 2x only. NVIDIA DLSS FG: RTX 40/50 only, HAGS required; 3x/4x multipliers are RTX 50-only.\n"
-              "A stable base of at least 30 FPS is a sensible starting point.")
+              "The choice is saved in your settings. A saved setting does not prove frame generation is running.")
     for w_, t_ in ((aa_cb, AA_TIP), (aa_l, AA_TIP), (fg_cb, FG_TIP), (fg_l, FG_TIP)): Tip(w_, t_)
     tr_all = tk.StringVar(value=PREFS["traffic"])
     tr_l = ttk.Label(pbody, text="Traffic & people", style="Card.TLabel"); tr_l.grid(row=2, column=0, sticky="w", pady=3)
@@ -4786,6 +5114,10 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     tl = ttk.Frame(cli, style="Card.TFrame"); tl.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
     link(tl, "Choose caches…", lambda: open_cleaner(), "Pick exactly which caches to clear.").pack(side="left")
     link(tl, "Undo Update Cleanup", lambda: undo_cleanup(), "Moves your add-ons back and restores your settings.").pack(side="left", padx=(14, 0))
+    sp = ttk.Button(cli, text="Support pack", style="Secondary.TButton", command=lambda: save_support_pack())
+    sp.grid(row=5, column=0, sticky="we", pady=(8, 0))
+    autowrap(ttk.Label(cli, text="A zip of the log, the PC check and the last settings change.", style="Muted.Card.TLabel", wraplength=260), cli, 200).grid(row=5, column=1, sticky="w", padx=10, pady=(8, 0))
+    Tip(sp, "Saves a zip you can keep: SkyTune's log, the PC check, and the latest before/after settings. You see the file list before it is saved. Account names are hidden. Nothing is uploaded.")
 
 
     # ================= cache cleaner =================
@@ -4975,6 +5307,9 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         if not st["cfg"]:
             summary.insert("end", "No settings file loaded yet.\nClick “Find file” or “Browse…” at the top.", "muted")
         else:
+            note = upscaler_saved_note(st["cfg"])
+            if note:
+                summary.insert("end", note + "\n\n", "muted")
             ch = summarize_changes(st["cfg"], collect(), res_opt.get())
             prof = st.get("active_profile") or {}
             if st.get("creator"):
@@ -5135,15 +5470,13 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     ttk.Label(ai, text="Every write asks first. A timestamped backup is kept, with a before/after note. Preset is set to Custom.",
               style="Muted.Card.TLabel", wraplength=200, justify="left").grid(sticky="w", pady=(8, 0), column=0)
     io, ii = card(side, "Frame generation"); io.pack(fill="x", pady=12)
-    ttk.Label(ii, style="Muted.Card.TLabel", wraplength=200, justify="left", text=(
-        "Frame generation is best enabled after the base frame rate is stable (aim for at least 30 FPS); VSync behaviour changes while FG is active. "
-        "If the sim crashes on load, set FrameGeneration to Off or restore a backup.\n\nAMD FSR frame generation works on most GPUs (2x). "
-        "NVIDIA DLSS FG needs an RTX 40/50 card with hardware-accelerated GPU scheduling; 3x/4x need RTX 50-series.")).grid(sticky="w", column=0)
+    ttk.Label(ii, style="Muted.Card.TLabel", wraplength=200, justify="left", text=FRAME_GEN_NOTE).grid(sticky="w", column=0)
 
     def add_row(parent, r, path, label, kind, spec, tip):
         cur = st["cfg"].get(path)
         lab = ttk.Label(parent, text=label, style="Card.TLabel"); lab.grid(row=r, column=0, sticky="w", pady=5, padx=(0, 12))
-        Tip(lab, tip + "\n\nKey: " + path)
+        extra = saved_setting_suffix(path, cur)
+        Tip(lab, tip + (("\n\n" + extra[0].upper() + extra[1:] + ". A saved setting does not prove it is running.") if extra else "") + "\n\nKey: " + path)
         ttk.Label(parent, text=in_file_label(path, cur, kind, spec), style="Muted.Card.TLabel", width=14).grid(row=r, column=1, sticky="w")
         cell = ttk.Frame(parent, style="Card.TFrame"); cell.grid(row=r, column=2, sticky="we")
         if kind == "choice":
@@ -5164,7 +5497,9 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
             var.trace_add("write", lambda *_a, var=var, disp=disp, fmt=fmt: disp.set(fmt(float(var.get()))))
             ttk.Label(cell, textvariable=disp, style="Value.Card.TLabel", width=6).pack(side="left", padx=10)
             ttk.Label(cell, text="%s – %s" % (fmt(lo), fmt(hi)), style="Muted.Card.TLabel").pack(side="left")
-        Tip(w, tip)
+        Tip(w, tip + (("\n\n" + extra[0].upper() + extra[1:] + ". A saved setting does not prove it is running.") if extra else ""))
+        if extra:
+            ttk.Label(cell, text=extra, style="Muted.Card.TLabel").pack(side="left", padx=(8, 0))
         st["vars"].setdefault(path, []).append((kind, spec, var))
         if path in FG_DEPENDENT:
             hv = tk.StringVar(); ttk.Label(cell, textvariable=hv, style="Muted.Card.TLabel").pack(side="left", padx=10)
@@ -5280,6 +5615,7 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         refresh_bindings()
         refresh_health()
         path_var.set(p); build_rows()
+        refresh_mods()
         apply_gpu_limits((st.get("hw") or {}).get("gpu"))
         edition_label = {"2020": "MSFS 2020", "2024": "MSFS 2024", "unknown": "compatible/unknown MSFS config"}.get(st["edition"], "MSFS")
         set_status("Loaded %s (%d supported settings)" % (edition_label, sum(1 for x in SETTINGS if x[0] in st["cfg"].index)))
@@ -5817,6 +6153,26 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         except OSError as e:
             messagebox.showerror(SHORT_NAME, "Couldn't save the diagnostic:\n%s" % e); return
         set_status("Diagnostic saved on this PC. It was not uploaded.")
+    def save_support_pack():
+        entries = build_support_pack(st.get("path"), st.get("edition"), st.get("hw"), st.get("health"))
+        names = support_pack_names(entries)
+        if not names:
+            set_status("There is nothing to put in a support pack yet.", "warn"); return
+        listing = "\n".join("• " + name for name in names)
+        if not messagebox.askyesno(SHORT_NAME,
+                                   "These files will be included:\n\n%s\n\nAccount names are written as <user>. Nothing is uploaded.\n\nSave this zip?" % listing,
+                                   default="no"):
+            set_status("Support pack cancelled. Nothing was saved.", "info"); return
+        dest = filedialog.asksaveasfilename(title="Save SkyTune support pack", defaultextension=".zip",
+                                            initialdir=support_pack_start_dir(), initialfile="SkyTune-support.zip",
+                                            filetypes=[("Zip", "*.zip")])
+        if not dest:
+            return
+        try:
+            write_support_pack(dest, entries)
+        except OSError as e:
+            messagebox.showerror(SHORT_NAME, "Couldn't save the support pack:\n%s" % plain_error(e)); return
+        set_status("Support pack saved on this PC. It was not uploaded.")
     def show_confirm_bar(text):
         yes_btn.configure(text="Yes, write" if (st.get("pending") or {}).get("kind") == "apply" else "Yes, restore")
         if not confirm_bar.winfo_ismapped():
