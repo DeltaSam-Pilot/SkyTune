@@ -1,9 +1,14 @@
 # Builds the Flightsim.to zip and uploads it as an Actions artifact.
-# Manual dispatch only. It does not publish a GitHub release and it does not create a tag.
+# It does not publish a GitHub release and it does not create a tag.
+# Push is limited to this branch because GitHub only accepts workflow_dispatch
+# after the workflow file is on the default branch.
 name: Windows package
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - cursor/support-pack-mods-2db2
 
 permissions:
   contents: read
