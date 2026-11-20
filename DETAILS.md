@@ -2,7 +2,7 @@
 
 ## Compatibility statement
 
-SkyTune v1.8.0 targets **Microsoft Flight Simulator 2020 and Microsoft Flight Simulator 2024 on PC**. Windows 10/11 x64 is the primary supported environment. Steam and Microsoft Store/Xbox app installations are detected at the common configuration locations, and a manual file picker is available for custom locations.
+SkyTune v1.8.1 targets **Microsoft Flight Simulator 2020 and Microsoft Flight Simulator 2024 on PC**. Windows 10/11 x64 is the primary supported environment. Steam and Microsoft Store/Xbox app installations are detected at the common configuration locations, and a manual file picker is available for custom locations.
 
 Linux / Steam Deck support is experimental and intended for users who already run a simulator edition through Steam Proton. The tool can be launched with Python 3 + Tkinter, but Microsoft does not officially support running MSFS on Linux. Xbox consoles cannot run third-party desktop utilities. macOS is not a supported simulator host.
 

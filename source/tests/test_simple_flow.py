@@ -49,7 +49,7 @@ class SimpleFlow(unittest.TestCase):
                 root.after(400, lambda: go(i + 1))
             root.after(1500, go); return root
         tk.Tk = mk
-        argv = sys.argv; sys.argv = ["msfs_tweaker.py"]
+        argv = sys.argv; sys.argv = ["msfs_tweaker.py", "--nav", "Optimise"]
         try: m.run_gui(demo_hw=True)
         finally: tk.Tk = orig; sys.argv = argv
         if errs: self.fail(errs[0])

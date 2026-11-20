@@ -1,5 +1,21 @@
 # Changelog – SkyTune for MSFS 2020/2024
 
+## v1.8.1 – 2026-11-20
+A small update on top of 1.8.0. The window has a sidebar, and settings are still written only after you confirm.
+
+- **Home.** A status line shows the sim SkyTune found, the SkyTune version, and the last apply. Cards open Optimise, Sims, Tools, Troubleshooting and Settings.
+- **Sims.** MSFS 2020 and 2024 are listed for Steam, the Microsoft Store, and a custom Community folder when that path is in the settings file.
+- **Sims.** Each detected install lists the Community packages by the names on disk. SkyTune only reads that folder.
+- **Optional mods.** On the Sims page you can install, repair or remove AtmosphereMod by tomwhoca and the Glass Cockpit DLSS fix add-on by IFreemz. SkyTune downloads each author's latest official release only after you click, checks the size and checksum, and links the licence. It remembers the files it copied and backs up anything it replaces. Uninstall puts those files back. Other Community packages are left as they are. A clash warning still appears when AtmosphereMod is already installed.
+- **NVIDIA.** A read-only page. If the driver can be read, SkyTune shows the name and version. It also lists recommended MSFS settings and where to set them in the NVIDIA app. It never writes a driver profile.
+- **Troubleshooting.** The support pack, the graphics-mod warning and the PC check are on one page.
+- **Updates.** Once a day, if you leave it on, SkyTune reads the version on its Flightsim.to page. A newer version shows a notice with a button that opens that page. Nothing is downloaded or installed for you. Turn it off under Settings.
+- **Support pack and saved settings.** The pack lists its files before saving and hides account names. DLSS and frame generation are labelled "saved in your settings".
+
+SkyTune.exe is unsigned. Download it only from the official Flightsim.to page. Changing settings is at your own risk: SkyTune backs up your file before every write, and you should keep a copy of your own as well. Results depend on your hardware, so frame rates are not guaranteed. SkyTune is a free, independent community project, not affiliated with or endorsed by Microsoft or Asobo Studio.
+
+SkyTune.exe is unsigned. Download it only from the official Flightsim.to page. Changing settings is at your own risk: SkyTune backs up your file before every write, and you should keep a copy of your own as well. Results depend on your hardware, so frame rates are not guaranteed. SkyTune is a free, independent community project, not affiliated with or endorsed by Microsoft or Asobo Studio.
+
 ## v1.8.0 – 2026-11-14 (quality)
 A quality pass on the same tools. The window starts with three steps, Help explains the common questions, and each suggested change has a one-line reason from the graphics card, video memory, processor cores, and screen refresh when those could be read. Nothing is written until you click Yes, write.
 

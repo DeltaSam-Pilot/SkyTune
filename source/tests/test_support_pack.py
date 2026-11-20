@@ -235,7 +235,7 @@ class SupportPackButton(unittest.TestCase):
             root.after(1600, click)
             return root
         tk.Tk = mk
-        old = sys.argv; sys.argv = ["msfs_tweaker.py"]
+        old = sys.argv; sys.argv = ["msfs_tweaker.py", "--nav", "Troubleshooting"]
         try:
             m.run_gui(demo_hw=True)
         finally:
