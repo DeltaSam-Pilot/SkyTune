@@ -129,6 +129,10 @@ class LooksAndOverlay(unittest.TestCase):
             shutil.rmtree(folder, ignore_errors=True)
         self.assertIn("FPS not read", m.overlay_text(None, "Natural"))
         self.assertIn("saved in your settings", m.overlay_text(60, "Vivid"))
+        csv = "Application,MsBetweenPresents\nFlightSimulator.exe,16.6\nFlightSimulator.exe,16.8\n"
+        self.assertEqual(m.fps_from_presentmon_csv(csv), 60)
+        self.assertIsNone(m.fps_from_presentmon_csv("Application,Other\n"))
+        self.assertIsNone(m.presentmon_fps(lookup=lambda _name: None))
         self.assertEqual(len(m.UPDATE_CATALOG), 5)
 
 class OptiArchive(unittest.TestCase):

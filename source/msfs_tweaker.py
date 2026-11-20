@@ -2117,6 +2117,48 @@ def overlay_text(fps, preset):
     name = preset or "no preset"
     return "%s · %s · saved in your settings" % (rate, name)
 
+def fps_from_presentmon_csv(text):
+    """Average frame rate from a PresentMon CSV. None when the frame-time column is missing or empty."""
+    lines = [line for line in str(text or "").splitlines() if line.strip()]
+    if len(lines) < 2:
+        return None
+    header = [part.strip().lower() for part in lines[0].split(",")]
+    key = "msbetweenpresents"
+    if key not in header:
+        return None
+    index = header.index(key)
+    samples = []
+    for line in lines[1:]:
+        parts = line.split(",")
+        if len(parts) <= index:
+            continue
+        try:
+            gap = float(parts[index].strip())
+        except ValueError:
+            continue
+        if gap > 0:
+            samples.append(1000.0 / gap)
+    if not samples:
+        return None
+    return int(round(sum(samples) / len(samples)))
+
+def _presentmon_sample(exe):
+    return _run([exe, "--output_stdout", "--no_console_stats", "--timed", "1", "--terminate_after_timed",
+                 "--process_name", "FlightSimulator.exe", "--process_name", "FlightSimulator2024.exe"], 8)
+
+def presentmon_fps(lookup=None, runner=None):
+    """A one-second PresentMon sample, or None when PresentMon is not installed."""
+    import shutil
+    lookup = lookup or shutil.which
+    exe = lookup("PresentMon") or lookup("presentmon")
+    if not exe:
+        return None
+    try:
+        text = _presentmon_sample(exe) if runner is None else runner(exe)
+    except Exception:
+        return None
+    return fps_from_presentmon_csv(text)
+
 UPDATE_CATALOG = (
     {"id": "skytune", "name": "SkyTune", "page": FLIGHTSIM_PAGE, "kind": "flightsim"},
     {"id": "optiscaler", "name": "OptiScaler", "page": "https://github.com/optiscaler/OptiScaler/releases/latest", "kind": "github", "repo": "optiscaler/OptiScaler"},
@@ -7374,8 +7416,21 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         dlg.attributes("-topmost", True)
         dlg.geometry("420x72+40+40")
         dlg.configure(bg=T["card"])
-        tk.Label(dlg, text=overlay_text(None, opti_up.get() or "no preset"), bg=T["card"], fg=T["text"],
-                 font=FONT_S, wraplength=400, justify="left").pack(fill="both", expand=True, padx=8, pady=8)
+        preset_name = opti_up.get() or "no preset"
+        label = tk.Label(dlg, text=overlay_text(None, preset_name), bg=T["card"], fg=T["text"],
+                         font=FONT_S, wraplength=400, justify="left")
+        label.pack(fill="both", expand=True, padx=8, pady=8)
+        def fill_fps():
+            fps = presentmon_fps()
+            def show():
+                try:
+                    if label.winfo_exists():
+                        label.configure(text=overlay_text(fps, preset_name))
+                except tk.TclError:
+                    pass
+            try: root.after(0, show)
+            except tk.TclError: pass
+        threading.Thread(target=fill_fps, daemon=True).start()
         overlay_win["widget"] = dlg
     root.bind("<F8>", toggle_overlay)
 
