@@ -2294,9 +2294,36 @@ RESHADE_PRESETS = {
     "Cinematic": "[SkyTune]\nName=Cinematic\nTechniques=Curves@Curves.fx,Tonemap@Tonemap.fx\n\n[Curves.fx]\nContrast=0.55\n\n[Tonemap.fx]\nGamma=1.05\nBleach=0.15\n",
 }
 RESHADE_SETUP_PAGE = "https://reshade.me"
+RESHADE_LICENCE = "https://github.com/crosire/reshade/blob/main/LICENSE.md"
 
 def reshade_preset_text(name):
     return RESHADE_PRESETS.get(name, "")
+
+def reshade_setup_url(html):
+    """The official setup named on reshade.me. No other download is accepted."""
+    version = reshade_listed_version(html)
+    if not version:
+        return {"ok": False, "error": "The official page did not name a version. Nothing was downloaded.", "url": "", "version": ""}
+    return {"ok": True, "error": None, "version": version, "url": "https://reshade.me/downloads/ReShade_Setup_%s.exe" % version}
+
+def reshade_setup_ok(data):
+    """A complete official setup is a Windows program of a plausible size."""
+    blob = bytes(data or b"")
+    return 100000 <= len(blob) <= 30 * 1024 * 1024 and blob[:2] == b"MZ"
+
+def save_reshade_setup(html, data, folder, record):
+    """Store the official setup in SkyTune's folder. The simulator is not changed here."""
+    chosen = reshade_setup_url(html)
+    if not chosen["ok"]:
+        return {"ok": False, "error": chosen["error"], "path": ""}
+    if not reshade_setup_ok(data):
+        return {"ok": False, "error": "The official setup did not look complete. Nothing was started.", "path": ""}
+    os.makedirs(folder, exist_ok=True)
+    dest = os.path.join(folder, "ReShade_Setup_%s.exe" % chosen["version"])
+    added = not os.path.exists(dest)
+    backup = _backup_and_write(dest, data)
+    _remember_mod_file(record, "reshade", chosen["version"], dest, backup, added)
+    return {"ok": True, "error": None, "path": dest, "version": chosen["version"]}
 
 def write_reshade_presets(folder, record):
     """Write SkyTune's three preset files. Shader source is not included."""
@@ -7425,6 +7452,44 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         else:
             set_status(result["error"], "err")
     ttk.Button(trouble_f, text="Save look presets", style="Secondary.TButton", command=save_looks).pack(anchor="w", pady=(8, 0))
+    def download_reshade():
+        if not messagebox.askyesno(SHORT_NAME,
+                                   "ReShade, by crosire, is BSD-3-Clause:\n%s\n\n"
+                                   "SkyTune will download the official setup from reshade.me and start it. "
+                                   "ReShade adds files to the simulator and can change how it looks. It may break after a simulator update. "
+                                   "This is your choice and your risk.\n\nSkyTune does not include ReShade." % RESHADE_LICENCE, default="no"):
+            set_status("Cancelled. ReShade was not downloaded.", "info")
+            return
+        def work():
+            import urllib.request
+            page_req = urllib.request.Request(RESHADE_SETUP_PAGE, headers={"User-Agent": "SkyTune/%s" % VERSION})
+            with urllib.request.urlopen(page_req, timeout=20) as resp:
+                html = resp.read().decode("utf-8", "replace")
+            chosen = reshade_setup_url(html)
+            if not chosen["ok"]:
+                return chosen
+            setup_req = urllib.request.Request(chosen["url"], headers={"User-Agent": "SkyTune/%s" % VERSION, "Referer": "https://reshade.me/"})
+            with urllib.request.urlopen(setup_req, timeout=120) as resp:
+                data = resp.read()
+            record_path = os.path.join(skytune_data_dir(), "managed_mods.json")
+            record = load_mod_record(record_path)
+            result = save_reshade_setup(html, data, skytune_data_dir(), record)
+            if result["ok"]:
+                save_mod_record(record_path, record)
+                result["started"] = False
+                if os.name == "nt":
+                    os.startfile(result["path"])
+                    result["started"] = True
+            return result
+        def done(result):
+            if not result.get("ok"):
+                set_status(result.get("error") or "ReShade was not downloaded.", "err")
+            elif result.get("started"):
+                set_status("Started the official ReShade setup. SkyTune did not copy any simulator files.")
+            else:
+                set_status("Saved the official setup. Start that file on Windows. SkyTune did not copy any simulator files.")
+        run_bg(work, done, "Downloading the official ReShade setup…")
+    ttk.Button(trouble_f, text="Download official ReShade setup", style="Secondary.TButton", command=download_reshade).pack(anchor="w", pady=(8, 0))
     ttk.Button(trouble_f, text="Open ReShade download", command=lambda: open_web(RESHADE_SETUP_PAGE)).pack(anchor="w", pady=(4, 0))
 
     nvidia_f = page(content, "NVIDIA", "Save and restore only change FlightSimulator.exe and FlightSimulator2024.exe. SkyTune backs up the current values first.")

@@ -135,8 +135,17 @@ class LooksAndOverlay(unittest.TestCase):
             self.assertIn("Tonemap.fx", text)
             self.assertNotIn("float4", text)
             self.assertEqual(len(record["mods"][0]["files"]), 3)
+            chosen = m.reshade_setup_url("Version 6.8.0 was released")
+            self.assertEqual(chosen["url"], "https://reshade.me/downloads/ReShade_Setup_6.8.0.exe")
+            blob = b"MZ" + b"x" * 100000
+            saved = m.save_reshade_setup("Version 6.8.0 was released", blob, folder, record)
+            self.assertTrue(saved["ok"])
+            self.assertTrue(saved["path"].endswith("ReShade_Setup_6.8.0.exe"))
+            self.assertFalse(m.save_reshade_setup("no version here", blob, folder, record)["ok"])
+            self.assertFalse(m.reshade_setup_ok(b"MZ" + b"short"))
             m.uninstall_managed_mod(record, "reshade")
             self.assertFalse(os.path.exists(os.path.join(folder, "SkyTune-Vivid.ini")))
+            self.assertFalse(os.path.exists(saved["path"]))
         finally:
             shutil.rmtree(folder, ignore_errors=True)
         self.assertIn("FPS not read", m.overlay_text(None, "Natural"))
