@@ -5130,7 +5130,7 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
             ttk.Label(inner, text=title, style="CardTitle.TLabel", compound="left",
                       image=icon("bar", px(12), px(16), T["accent"], T["card"])).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, px(2)))
             if subtitle:
-                autowrap(ttk.Label(inner, text=subtitle, style="Muted.Card.TLabel", wraplength=620, justify="left"), inner, 36).grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 8))
+                autowrap(ttk.Label(inner, text=subtitle, style="Muted.Card.TLabel", wraplength=360, justify="left"), inner, 36).grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 8))
         return outer, inner
 
     st = {"path": None, "cfg": None, "edition": "unknown", "vars": {}, "cleaner_built": False, "held": set(), "drift": []}
@@ -5271,7 +5271,7 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     simple_outer = ttk.Frame(root)
     _scv = tk.Canvas(simple_outer, bg=T["bg"], highlightthickness=0)
     _ssb = ttk.Scrollbar(simple_outer, command=_scv.yview); _shb = ttk.Scrollbar(simple_outer, orient="horizontal", command=_scv.xview)
-    simple = ttk.Frame(_scv, padding=(20, 14)); _sw = _scv.create_window((0, 0), window=simple, anchor="nw")
+    simple = ttk.Frame(_scv, padding=(4, 14)); _sw = _scv.create_window((0, 0), window=simple, anchor="nw")
     def _sfit(_=None):
         cw, ch = _scv.winfo_width(), _scv.winfo_height()
         if cw > 50: relayout_cols(cw)
@@ -5321,10 +5321,11 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     # ================= simple view =================
     
     scol_l = ttk.Frame(simple); scol_l.pack(side="left", fill="both", expand=True)
-    scol_r = ttk.Frame(simple, width=430); scol_r.pack(side="right", fill="both", padx=(16, 0))
-    col_mode = {"stacked": None, "need": 0}
+    scol_r = ttk.Frame(simple, width=330); scol_r.pack(side="right", fill="both", padx=(8, 0))
+    col_mode = {"stacked": None, "need": 0, "t0": time.monotonic()}
     def relayout_cols(width):
-        if col_mode["stacked"]: stacked = width < col_mode["need"]
+        if col_mode["stacked"]:
+            stacked = width < col_mode["need"]
         else:
             req = simple.winfo_reqwidth()
             now = time.monotonic()
@@ -5389,11 +5390,11 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     link(s1l, "Frame Hold…", lambda: open_frame_hold(),
          "Work out terrain and object detail for a target frame rate. It does not change the simulator while it is running.").pack(anchor="w", pady=(2, 0))
     reco_var = tk.StringVar(value="Not checked yet.")
-    autowrap(ttk.Label(ai2, textvariable=reco_var, style="Value.Card.TLabel", wraplength=int(300 * DPIF), justify="left"), ai2, 36).grid(row=3, column=0, sticky="w", pady=(10, 0))
+    autowrap(ttk.Label(ai2, textvariable=reco_var, style="Value.Card.TLabel", wraplength=int(240 * DPIF), justify="left"), ai2, 36).grid(row=3, column=0, sticky="w", pady=(10, 0))
     health_var = tk.StringVar(value="PC health: not read yet. This check does not change Windows.")
-    autowrap(tk.Label(ai2, textvariable=health_var, bg=T["card"], fg=T["muted"], font=FONT_S, justify="left", anchor="w", wraplength=int(300 * DPIF)), ai2, 36).grid(row=4, column=0, sticky="w", pady=(6, 0))
+    autowrap(tk.Label(ai2, textvariable=health_var, bg=T["card"], fg=T["muted"], font=FONT_S, justify="left", anchor="w", wraplength=int(240 * DPIF)), ai2, 36).grid(row=4, column=0, sticky="w", pady=(6, 0))
     mod_var = tk.StringVar(value="")
-    mod_lbl = autowrap(tk.Label(ai2, textvariable=mod_var, bg=T["card"], fg=T["warn"], font=FONT_S, justify="left", anchor="w", wraplength=int(300 * DPIF)), ai2, 36)
+    mod_lbl = autowrap(tk.Label(ai2, textvariable=mod_var, bg=T["card"], fg=T["warn"], font=FONT_S, justify="left", anchor="w", wraplength=int(240 * DPIF)), ai2, 36)
     def refresh_mods():
         try:
             found = find_graphics_mods(st.get("cfg"), st.get("edition"))
@@ -5461,8 +5462,8 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     erow = ttk.Frame(gi2, style="Card.TFrame"); erow.grid(row=7, column=0, sticky="we"); erow.columnconfigure(0, weight=1)
     ask_var = tk.StringVar()
     ask_entry = ttk.Entry(erow, textvariable=ask_var, font=FONT); ask_entry.grid(row=0, column=0, sticky="we")
-    ask_entry.bind("<Return>", lambda e: ask(ask_var.get()))
-    ttk.Button(erow, text="Ask", style="Primary.TButton", command=lambda: ask(ask_var.get())).grid(row=0, column=1, padx=(8, 0))
+    ask_entry.bind("<Return>", lambda e: ask(ask_var.get() or ask_entry.get()))
+    ttk.Button(erow, text="Ask", style="Primary.TButton", command=lambda: ask(ask_var.get() or ask_entry.get())).grid(row=0, column=1, padx=(8, 0))
     Tip(ask_entry, "Describe it in your own words, e.g. “stutters on approach at busy airports”. Typos are fine.")
     airow = ttk.Frame(gi2, style="Card.TFrame"); airow.grid(row=8, column=0, sticky="w", pady=(6, 0))
     ai_on = tk.BooleanVar(value=PREFS["ai_enabled"])
@@ -5511,7 +5512,7 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         r = 0
         def line(text, fg=T["text"], font=FONT, pady=(0, 2)):
             nonlocal r
-            l = autowrap(tk.Label(asst, text=text, bg=T["card"], fg=fg, font=font, justify="left", anchor="w", wraplength=int(300 * DPIF)), gi2, 40)
+            l = autowrap(tk.Label(asst, text=text, bg=T["card"], fg=fg, font=font, justify="left", anchor="w", wraplength=int(240 * DPIF)), gi2, 40)
             l.grid(row=r, column=0, sticky="w", pady=pady); r += 1; return l
         for msg in st["said"][-3:]: line("You:  " + msg, T["muted"], FONT_S)
         if extra:
@@ -6284,8 +6285,13 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         was = st.get("sim"); st["sim"] = r
         if bool(r) != bool(was) or "sim_shown" not in st:
             st["sim_shown"] = bool(r)
-            if r: simban.pack(fill="x", padx=20, pady=(12, 0), before=ban if view["adv"] else simple_outer)
-            else: simban.pack_forget()
+            if r:
+                try:
+                    simban.pack(fill="x", padx=20, pady=(12, 0), before=ban if view["adv"] else simple_outer)
+                except tk.TclError:
+                    simban.pack(fill="x", padx=12, pady=(8, 0))
+            else:
+                simban.pack_forget()
         apply_sim_lock()
 
     side = ttk.Frame(body, width=250); side.pack(side="right", fill="y", padx=(14, 0))
@@ -7293,10 +7299,14 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         if name == "Optimise":
             footer.pack(side="bottom", fill="x")
             simple_outer.pack(in_=content, fill="both", expand=True)
+            simple_outer.lift(); footer.lift()
+            root.update_idletasks()
+            rewrap(); _sfit(); root.update_idletasks(); rewrap(); _sfit()
             refresh_summary()
         elif name == "Tools":
             ban.pack(in_=content, fill="x", padx=12, pady=(8, 0))
             body.pack(in_=content, fill="both", expand=True, padx=12, pady=8)
+            ban.lift(); body.lift()
         elif name == "Home":
             home_f.pack(in_=content, fill="both", expand=True)
         elif name == "Sims":
@@ -7338,21 +7348,21 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
               style="Muted.Card.TLabel", wraplength=640, justify="left").pack(anchor="w", pady=(8, 0))
 
     sims_f = page(content, "Sims", "MSFS 2020 and 2024 from Steam, the Microsoft Store, and a Community folder named in the settings file.")
-    sims_box = tk.Text(sims_f, height=8, bg=T["card"], fg=T["text"], relief="flat", font=FONT, wrap="word")
+    sims_box = tk.Label(sims_f, bg=T["card"], fg=T["text"], font=FONT, wraplength=640, justify="left", anchor="nw")
     sims_box.pack(fill="x")
     sim_pick = tk.StringVar(value="")
     def refresh_sims():
         found = describe_installs(detect_usercfgs())
         st["installs"] = found
-        sims_box.config(state="normal"); sims_box.delete("1.0", "end")
+        lines = []
         if not found:
-            sims_box.insert("end", "No simulator settings file found yet. Use Find file or Browse.\n")
+            lines.append("No simulator settings file found yet. Use Find file or Browse.")
         for item in found:
             packs = item.get("packages") or []
             shown = ", ".join(packs) if packs else "none found"
-            sims_box.insert("end", "%s  ·  %s  ·  MSFS %s\n%s\nCommunity: %s\nPackages (read only): %s\n\n" % (
+            lines.append("%s  ·  %s  ·  MSFS %s\n%s\nCommunity: %s\nPackages (read only): %s" % (
                 item["label"], item["source"], item["edition"], item["path"], item["community"] or "not named in the file", shown))
-        sims_box.config(state="disabled")
+        sims_box.configure(text="\n\n".join(lines))
         labels = ["%s · MSFS %s" % (item["source"], item["edition"]) for item in found]
         if labels:
             sim_pick.set(labels[0])
@@ -7495,14 +7505,12 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
     nvidia_f = page(content, "NVIDIA", "Save and restore only change FlightSimulator.exe and FlightSimulator2024.exe. SkyTune backs up the current values first.")
     nvidia_var = tk.StringVar(value="Not read yet.")
     autowrap(ttk.Label(nvidia_f, textvariable=nvidia_var, style="Card.TLabel", wraplength=640, justify="left"), nvidia_f, 8).pack(anchor="w")
-    nvidia_steps = tk.Text(nvidia_f, height=8, bg=T["card"], fg=T["text"], relief="flat", font=FONT, wrap="word")
+    nvidia_steps = tk.Label(nvidia_f, bg=T["card"], fg=T["text"], font=FONT, wraplength=640, justify="left", anchor="nw")
     nvidia_steps.pack(fill="x", pady=(6, 0))
     def fill_nvidia(info):
         nvidia_var.set(("%s · driver %s. %s" % (info.get("gpu"), info.get("driver"), info.get("note"))) if info.get("ok") else info.get("note"))
-        nvidia_steps.config(state="normal"); nvidia_steps.delete("1.0", "end")
-        for row in info.get("rows") or []:
-            nvidia_steps.insert("end", "%s: %s\n%s\n\n" % (row["setting"], row["recommended"], row["where"]))
-        nvidia_steps.config(state="disabled")
+        lines = ["%s: %s\n%s" % (row["setting"], row["recommended"], row["where"]) for row in info.get("rows") or []]
+        nvidia_steps.configure(text="\n\n".join(lines))
     ttk.Button(nvidia_f, text="Read driver", style="Secondary.TButton", command=lambda: run_bg(read_nvidia_status, fill_nvidia, "Reading the NVIDIA driver…")).pack(anchor="w", pady=(8, 0))
     fill_nvidia(read_nvidia_status(lambda: ""))
     nvidia_save_note = tk.StringVar(value="")
@@ -7683,13 +7691,14 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
 
     def place_sidebar(_=None):
         sidebar.pack_forget(); content.pack_forget()
-        narrow = root.winfo_width() < 1100
-        if narrow:
-            sidebar.pack(side="top", fill="x"); content.pack(side="top", fill="both", expand=True)
-        else:
-            sidebar.pack(side="left", fill="y"); content.pack(side="left", fill="both", expand=True)
+        sidebar.pack(side="left", fill="y"); content.pack(side="left", fill="both", expand=True)
+        page = st.get("nav")
+        if page == "Optimise":
+            simple_outer.lift(); footer.lift()
+        elif page == "Tools":
+            ban.lift(); body.lift()
     for name in NAV_PAGES:
-        button = tk.Button(sidebar, text=name, command=lambda n=name: show_nav(n), bd=0, padx=12, pady=8,
+        button = tk.Button(sidebar, text=name, command=lambda n=name: show_nav(n), bd=0, padx=0, pady=8,
                            bg=T["card"], fg=T["text"], activebackground=T["primary"], activeforeground="#ffffff",
                            font=FONT_B, anchor="w", cursor="hand2")
         button.pack(fill="x")
@@ -7731,6 +7740,12 @@ def run_gui(demo_hw=False, start_tab=0, auto_open_detect=False, start_view="simp
         overlay_win["widget"] = dlg
     root.bind("<F8>", toggle_overlay)
 
+    for widget in (simple_outer, body, ban):
+        try:
+            widget.pack(in_=content)
+            widget.pack_forget()
+        except tk.TclError:
+            pass
     root.after(100, first_launch)
     if os.environ.get("SKYTUNE_PROBE"):           # developer start-up timing hook (perf measurements only)
         root.after(100, lambda: root.after_idle(lambda: open(os.environ["SKYTUNE_PROBE"], "w").write(str(time.time()))))

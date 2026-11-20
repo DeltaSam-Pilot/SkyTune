@@ -75,8 +75,9 @@ class SimpleFlow(unittest.TestCase):
     def test_fix_optimise_worse_undo(self):
         orig = open(self.cfg, "rb").read(); seen = {}
         def ask(root):
-            e = next(w for w in self.widgets(root) if w.winfo_class() == "TEntry")
-            e.delete(0, "end"); e.insert(0, "stutters at busy airprots"); self.find(root, "Ask").invoke()
+            button = self.find(root, "Ask")
+            e = next(w for w in button.master.winfo_children() if w.winfo_class() == "TEntry")
+            e.delete(0, "end"); e.insert(0, "stutters at busy airprots"); button.invoke()
         def top(root):
             self.assertTrue(any(l.startswith("Likely cause:") for l in self.labels(root)))
             self.find(root, "Use top fix").invoke()
